@@ -29,10 +29,58 @@ harn/
   README.md                # this file
 ```
 
+## Installer (`install.sh`)
+
+`install.sh` installs the whole tutoring stack on a machine **except the model
+prompts** (which stay private and are never bundled). It mirrors this folder, the
+course corpus, the harn provider config, and the Zed wiring:
+
+```bash
+./install.sh --prefix ~/tutorat            # full install (asks before writing)
+./install.sh --prefix ~/tutorat --yes      # non-interactive
+./install.sh --dry-run                     # print the plan, change nothing
+./install.sh --no-corpus                   # runner only, no course corpus
+./install.sh --with-fallback               # emit TUTOR_FALLBACK=llamacpp_remote
+./install.sh --help
+```
+
+It performs, in order:
+
+1. locate the `harn` runtime — `install.sh` never installs a binary. It looks on
+   `PATH` first, then in the copy Zed's ACP Registry downloaded for its Harn
+   external agent; `run.sh` does the same at launch. If none is found it prints
+   how to fetch it (enable the Harn external agent once in Zed, or the official
+   installer);
+2. copy the runner (`main.harn`, `run.sh`, `harn.toml`, `providers.toml.dist`,
+   `agent/instructions.md`, `README.md`) to `<prefix>/harn/`;
+3. copy the corpus (`Courses/*.qmd`, `www/`, `sections.json`) to
+   `<prefix>/corpus/` — this is the read-only doc root (`TUTOR_DOCROOT`);
+4. write `providers.toml` to `~/.config/harn/providers.toml` from the `.dist`
+   template (skipped if it already defines your provider; `--force-providers` to
+   overwrite with a backup) — **never rewritten by hand, never committed with a
+   key**;
+5. create a `prompts/` scaffold with an explanatory `README.md` only;
+6. write `env.example.sh`, `zed-agent-servers.json` (merge into
+   `~/.config/zed/settings.json` or Agent Settings → External Agents), and
+   `start-docs.sh` (serves `corpus/www` on `8765`) — all with absolute paths.
+
+Overrides: `--runner DIR`, `--corpus DIR`, `--system-prompt FILE`
+(`TUTOR_SYSTEM` target), `--models DIR` (only used to print the model-server
+line), `--docs-port N`, `--provider NAME`, `--model NAME`.
+
+The French model prompts are deliberately not part of the script: it creates a
+`prompts/` folder and whoever holds the prompts places a compiled prompt file
+there and points `TUTOR_SYSTEM` at it.
+
 ## Requirements
 
-- `harn` binary (`>= 0.10`; this file is developed and validated against
-  `0.10.127`). `harn serve acp` is the entry point.
+- `harn` runtime (`>= 0.10`; this runner is developed and validated against
+  `0.10.127`), with `harn serve acp` as the entry point. Registry-led: no
+  global install required — `run.sh` (and `install.sh`) resolve it from `PATH`
+  first, then from the binary Zed's ACP Registry downloaded for its Harn
+  external agent. To fetch it, enable the Harn external agent once in Zed
+  (Agent Settings > External Agents), or install globally with
+  `curl -fsSL https://harnlang.com/install.sh | sh`.
 - An OpenAI-compatible chat endpoint. Typically llama.cpp running in "router"
   mode locally (default provider `llamacpp`, base `http://127.0.0.1:8025/v1`).
   Any local or remote OpenAI-compatible server works.
@@ -136,8 +184,9 @@ harn check main.harn          # validate (zero diagnostics)
 
 ### Embedding in Zed (custom agent server)
 
-Zed launches the agent through a custom agent server. Point it at the runner and
-export the `TUTOR_*` variables:
+Zed launches the agent through a custom agent server. Point the command at the
+runner (`run.sh`) and export the `TUTOR_*` variables — this is exactly what the
+generated `zed-agent-servers.json` encodes:
 
 ```bash
 TUTOR_PROVIDER=llamacpp \
@@ -146,8 +195,12 @@ TUTOR_DOCROOT=/path/to/docroot \
 TUTOR_SYSTEM=/path/to/instructions.md \
 TUTOR_DOCS_BASE=http://127.0.0.1:8765 \
 TUTOR_SECTIONS=/path/to/sections.json \
-harn serve acp /path/to/harn/main.harn
+/path/to/harn/run.sh
 ```
+
+`run.sh` first resolves the `harn` runtime (see Requirements), then executes
+`harn serve acp /path/to/harn/main.harn "$@"`. Calling `harn serve acp ...`
+directly works too when `harn` is already on your `PATH`.
 
 For a remote (WebSocket) agent server, Zed supports websocket ACP:
 

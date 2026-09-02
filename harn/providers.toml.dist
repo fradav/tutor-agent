@@ -1,6 +1,9 @@
-# Copy this file to ~/.config/harn/providers.toml, adjust the endpoints, and
-# restart the agent. harn reads provider configuration from $HOME/.config/harn/
-# on Linux/macOS (and %APPDATA% on Windows).
+# Template provider config — install.sh copies this to <prefix>/harn/providers.toml,
+# inside the installation prefix. The harn runtime is pointed at that file with
+# the HARN_PROVIDERS_CONFIG environment variable (run.sh sets it to the file next
+# to it; env.example.sh exports the same path). Nothing is written to the home
+# config directory. If HARN_PROVIDERS_CONFIG is unset, harn falls back to
+# ~/.config/harn/providers.toml.
 #
 # NEVER commit your real providers.toml — it may contain credentials.
 

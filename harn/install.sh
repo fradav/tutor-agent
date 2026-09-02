@@ -7,7 +7,8 @@
 #   1. the generic ACP runner  (this folder: main.harn, run.sh, harn.toml,
 #      providers.toml.dist, agent/instructions.md, README.md)
 #   2. the course corpus       (Courses/*.qmd, www/, sections.json)
-#   3. the harn provider config  (~/.config/harn/providers.toml, from .dist)
+#   3. the harn provider config  (<prefix>/harn/providers.toml, from .dist;
+#      the runtime is pointed at it via HARN_PROVIDERS_CONFIG)
 #   4. a prompts/ scaffold     (a README, NOT the French prompts themselves)
 #   5. env + Zed wiring        (env.example.sh, zed-agent-servers.json,
 #      start-docs.sh) with absolute paths
@@ -24,9 +25,10 @@
 # places a compiled prompt file there and points TUTOR_SYSTEM at it.
 #
 # Usage:
-#   ./install.sh --prefix ~/tutorat            # install to a directory
-#   ./install.sh --dry-run                     # print plan, change nothing
-#   ./install.sh --no-corpus                   # runner only (no course corpus)
+#   ./install.sh                        # install into the current directory
+#   ./install.sh --prefix ~/tutorat     # install to a directory
+#   ./install.sh --dry-run              # print plan, change nothing
+#   ./install.sh --no-corpus            # runner only (no course corpus)
 #   ./install.sh --help
 #
 # Configuration overrides:
@@ -35,7 +37,7 @@
 #   --system-prompt FILE   TUTOR_SYSTEM target (default: installed instructions.md)
 #   --models DIR    where GGUF files live (only used to print the model server line)
 #   --with-fallback emit TUTOR_FALLBACK=llamacpp_remote (user supplies TUTOR_API_KEY)
-#   --force-providers         overwrite an existing ~/.config/harn/providers.toml
+#   --force-providers         overwrite an existing <prefix>/harn/providers.toml
 #   --yes                     non-interactive (no confirmation prompts)
 set -euo pipefail
 
@@ -43,7 +45,7 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # --- defaults ----------------------------------------------------------------
-PREFIX="${PREFIX:-$HOME/tutorat}"
+PREFIX="${PREFIX:-.}"
 RUNNER_SRC="$HERE"
 CORPUS_SRC="$(cd "$HERE/.." && pwd)/corpus"
 SYSTEM_PROMPT=""                # empty => <prefix>/harn/agent/instructions.md
@@ -60,7 +62,6 @@ FORCE_PROVIDERS=0
 WITH_CORPUS=1
 DRY_RUN=0
 ASSUME_YES=0
-PREFIX_DEFAULTED=1
 
 usage() {
   sed -n '2,/^set -euo pipefail/p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' | grep -v '^$' | grep -v '^set -euo'
@@ -75,10 +76,28 @@ die() { err "$*"; exit 1; }
 
 need_cmd() { command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"; }
 
+# Absolute path of (possibly not-yet-existing) path, without creating anything.
+abspath() {
+  local path="$1" head="" tail=""
+  case "$path" in
+    /*) printf '%s\n' "$path"; return 0 ;;
+  esac
+  head="$path"
+  while [ -n "$head" ] && [ "$head" != "." ] && [ "$head" != "/" ] && [ ! -d "$head" ]; do
+    tail="/${head##*/}$tail"
+    head="${head%/*}"
+  done
+  if [ -n "$head" ] && [ -d "$head" ]; then
+    printf '%s%s\n' "$(cd "$head" && pwd)" "$tail"
+  else
+    printf '%s/%s\n' "$PWD" "$path"
+  fi
+}
+
 # --- parse arguments ----------------------------------------------------------
 while [ $# -gt 0 ]; do
   case "$1" in
-    --prefix)          PREFIX="${2:?--prefix needs a directory}"; PREFIX_DEFAULTED=0; shift 2 ;;
+    --prefix)          PREFIX="${2:?--prefix needs a directory}"; shift 2 ;;
     --runner)          RUNNER_SRC="${2:?--runner needs a directory}"; shift 2 ;;
     --corpus)          CORPUS_SRC="${2:?--corpus needs a directory}"; shift 2 ;;
     --system-prompt)   SYSTEM_PROMPT="${2:?--system-prompt needs a file}"; shift 2 ;;
@@ -101,6 +120,7 @@ RUNNER_SRC="$(cd "$RUNNER_SRC" && pwd)"
 [ "$WITH_CORPUS" = 1 ] && CORPUS_SRC="$(cd "$CORPUS_SRC" && pwd)"
 [ "$SYSTEM_PROMPT" != "" ] && SYSTEM_PROMPT="$(cd "$(dirname "$SYSTEM_PROMPT")" && pwd)/$(basename "$SYSTEM_PROMPT")"
 [ "$MODELS_DIR" != "" ] && MODELS_DIR="$(cd "$MODELS_DIR" && pwd)"
+PREFIX="$(abspath "$PREFIX")"
 
 RUNNER_DEST="$PREFIX/harn"
 CORPUS_DEST="$PREFIX/corpus"
@@ -108,13 +128,15 @@ PROMPTS_DEST="$PREFIX/prompts"
 SYSTEM_DEST="$PREFIX/harn/agent/instructions.md"
 [ "$SYSTEM_PROMPT" != "" ] && SYSTEM_DEST="$SYSTEM_PROMPT"
 
-# harn user config directory (Linux/macOS)
-if [ -n "${XDG_CONFIG_HOME:-}" ]; then
-  HARN_CONFIG_DIR="$XDG_CONFIG_HOME/harn"
-else
-  HARN_CONFIG_DIR="$HOME/.config/harn"
+# Provider config lives in-prefix; the runtime is pointed at it via
+# HARN_PROVIDERS_CONFIG (exported by run.sh and env.example.sh).
+HARN_PROVIDERS="$RUNNER_DEST/providers.toml"
+
+# Never install into (or below) the runner source folder — with PREFIX='.' a run
+# from inside the runner would otherwise copy the runner into itself.
+if [ "$RUNNER_DEST" = "$RUNNER_SRC" ] || [ "${RUNNER_DEST#$RUNNER_SRC/}" != "$RUNNER_DEST" ]; then
+  die "refusing to install into the runner source folder ($RUNNER_SRC) — pick a different --prefix"
 fi
-HARN_PROVIDERS="$HARN_CONFIG_DIR/providers.toml"
 
 # --- locate harn (registry-led: PATH first, then Zed's ACP registry) -----------
 ver_gt() { # numeric version compare: ver_gt A B -> true if A > B
@@ -160,7 +182,7 @@ if [ "$DRY_RUN" = 1 ]; then
   dry "runner source     : $RUNNER_SRC"
   [ "$WITH_CORPUS" = 1 ] && dry "corpus source     : $CORPUS_SRC" || dry "corpus            : (skipped)"
   dry "system prompt     : $SYSTEM_DEST"
-  dry "providers target  : $HARN_PROVIDERS"
+  dry "providers (in-prefix): $HARN_PROVIDERS"
   dry "docs server       : python3 -m http.server $DOCS_PORT --directory $CORPUS_DEST/www"
   if [ -n "$HARN_BIN" ]; then
     dry "harn runtime      : $HARN_BIN"
@@ -220,7 +242,7 @@ if [ "$WITH_CORPUS" = 1 ]; then
   rm -f "$CORPUS_DEST/Courses/.gitignore"
 fi
 
-# --- 4. provider config ------------------------------------------------------------
+# --- 4. provider config (in-prefix) -------------------------------------------------
 install_providers() {
   if [ -f "$HARN_PROVIDERS" ]; then
     if grep -q '\[providers\.'"$PROVIDER"'\]' "$HARN_PROVIDERS" && [ "$FORCE_PROVIDERS" = 0 ]; then
@@ -233,12 +255,13 @@ install_providers() {
       warn "Backed up existing provider config to $bak, overwriting."
     fi
   fi
-  mkdir -p "$HARN_CONFIG_DIR"
+  mkdir -p "$(dirname "$HARN_PROVIDERS")"
   cp "$RUNNER_DEST/providers.toml.dist" "$HARN_PROVIDERS"
-  log "Wrote provider config: $HARN_PROVIDERS (template, no credentials)."
+  chmod 600 "$HARN_PROVIDERS"
+  log "Wrote provider config: $HARN_PROVIDERS (in-prefix template, no credentials)."
+  log "The runtime reads it via HARN_PROVIDERS_CONFIG (set by run.sh and env.example.sh)."
 }
 install_providers
-[ -f "$HARN_PROVIDERS" ] && chmod 600 "$HARN_PROVIDERS"
 
 # --- 5. prompts scaffold (never copies the French prompts) --------------------------
 log "Creating the prompts/ scaffold (the French prompts are NOT installed)..."
@@ -266,6 +289,8 @@ log "Scaffold ready: $PROMPTS_DEST/README.md"
 cat > "$PREFIX/env.example.sh" <<EOF
 # env.example.sh — environment for the harn Socratic tutor (generated by install.sh)
 # Source it in a shell session, or use these values in Zed agent_servers env.
+# Provider config lives in-prefix; HARN_PROVIDERS_CONFIG points harn at it.
+export HARN_PROVIDERS_CONFIG="$RUNNER_DEST/providers.toml"
 export TUTOR_PROVIDER="$PROVIDER"
 export TUTOR_MODEL="$MODEL"
 export TUTOR_DOCROOT="$DOCROOT"
@@ -296,6 +321,7 @@ cat > "$PREFIX/zed-agent-servers.json" <<EOF
       "command": "$RUNNER_DEST/run.sh",
       "args": [],
       "env": {
+        "HARN_PROVIDERS_CONFIG": "$RUNNER_DEST/providers.toml",
         "TUTOR_PROVIDER": "$PROVIDER",
         "TUTOR_MODEL": "$MODEL",
         "TUTOR_DOCROOT": "$DOCROOT",
@@ -337,7 +363,7 @@ What was installed
   runner   : $RUNNER_DEST
   corpus   : $CORPUS_DEST  (doc root for the read-only tools)
   prompts  : $PROMPTS_DEST (scaffold only — add your prompt file there)
-  provider : $HARN_PROVIDERS
+  provider : $HARN_PROVIDERS  (in-prefix; HARN_PROVIDERS_CONFIG set by run.sh/env.example.sh)
   harn     : ${HARN_BIN:-not found (enable the Zed 'Harn' external agent)}
 
 Next steps

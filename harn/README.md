@@ -24,7 +24,7 @@ harn/
   main.harn                # the ACP runner (single file, no dependencies)
   agent/instructions.md    # default system prompt (EN, generic)
   harn.toml                # project manifest
-  providers.toml.dist      # template for ~/.config/harn/providers.toml
+  providers.toml.dist      # template -> <prefix>/harn/providers.toml (in-prefix)
   run.sh                   # convenience launcher for `harn serve acp`
   README.md                # this file
 ```
@@ -55,10 +55,11 @@ It performs, in order:
    `agent/instructions.md`, `README.md`) to `<prefix>/harn/`;
 3. copy the corpus (`Courses/*.qmd`, `www/`, `sections.json`) to
    `<prefix>/corpus/` — this is the read-only doc root (`TUTOR_DOCROOT`);
-4. write `providers.toml` to `~/.config/harn/providers.toml` from the `.dist`
-   template (skipped if it already defines your provider; `--force-providers` to
-   overwrite with a backup) — **never rewritten by hand, never committed with a
-   key**;
+4. write the provider config to `<prefix>/harn/providers.toml` (in-prefix, from
+   the `.dist` template) and expose it through `HARN_PROVIDERS_CONFIG` (set by
+   `run.sh` and in the generated `env.example.sh` / `zed-agent-servers.json`;
+   skipped if it already defines your provider, `--force-providers` to overwrite
+   with a backup) — **never rewritten by hand, never committed with a key**;
 5. create a `prompts/` scaffold with an explanatory `README.md` only;
 6. write `env.example.sh`, `zed-agent-servers.json` (merge into
    `~/.config/zed/settings.json` or Agent Settings → External Agents), and
@@ -87,7 +88,12 @@ there and points `TUTOR_SYSTEM` at it.
 
 ## Provider configuration
 
-Copy `providers.toml.dist` to `~/.config/harn/providers.toml` and adjust:
+`providers.toml.dist` is a template. The installer copies it in-prefix to
+`<prefix>/harn/providers.toml` and points the runtime at it with
+`HARN_PROVIDERS_CONFIG` (set by `run.sh` and the generated `env.example.sh`). For
+a manual checkout, copy it next to `main.harn` (i.e. `harn/providers.toml`) so
+`run.sh` picks it up, or export `HARN_PROVIDERS_CONFIG` yourself. Nothing is
+written to `~/.config/harn/`. Adjust:
 
 ```toml
 [providers.llamacpp]
@@ -109,6 +115,7 @@ name or an array of names tried in order.
 
 | Variable | Default | Meaning |
 |---|---|---|
+| `HARN_PROVIDERS_CONFIG` | *(unset)* | path to the in-prefix `providers.toml` (set by `run.sh` / generated `env.example.sh`) |
 | `TUTOR_PROVIDER` | `llamacpp` | provider name to call first |
 | `TUTOR_MODEL` | `qwen3.5-4B` | model name (alias as configured on the endpoint) |
 | `TUTOR_DOCROOT` | `.` | root for the read-only file tools |

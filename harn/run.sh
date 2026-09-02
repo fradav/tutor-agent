@@ -18,6 +18,13 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Point harn at the in-prefix provider config installed by install.sh, unless
+# the user already set HARN_PROVIDERS_CONFIG. When the file is absent (dev
+# checkout), leave the variable unset so harn falls back to its global config.
+if [ -f "$HERE/providers.toml" ]; then
+  export HARN_PROVIDERS_CONFIG="${HARN_PROVIDERS_CONFIG:-$HERE/providers.toml}"
+fi
+
 # Numeric version comparison: ver_gt A B is true when A > B (numeric, dot-split).
 ver_gt() {
   local a b

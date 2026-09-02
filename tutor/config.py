@@ -4,6 +4,11 @@ Lit ``config.json`` à la racine de `Tutor-agent/` — le chemin est résolu
 relativement à ce module (``Path(__file__)``), donc indépendant du ``cwd`` de
 la session ACP (l'élève peut ouvrir l'agent depuis n'importe quel dossier).
 
+Un fichier ``config.local.json`` (optionnel, **jamais committé** — chemins de
+machine, cf. ``install.sh`` du jumeau) est fusionné par-dessus ``config.json`` :
+c'est lui qui porte les chemins du cours côté enseignant (``paths.course_dir``,
+``docs.py_dir``) pour garder ``config.json`` générique et public.
+
 ``STUB`` (variable d'env ``TUTOR_STUB=1``) : mode sans serveur LLM ni corpus,
 utilisé par les tests unitaires (le moteur renvoie une réponse déterministe).
 """
@@ -15,7 +20,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent            # Tutor-agent/
 CONFIG_PATH = BASE_DIR / "config.json"
-PROMPTS_DIR = BASE_DIR / "tutor" / "prompts"
+CONFIG_LOCAL_PATH = BASE_DIR / "config.local.json"
 SESSIONS_DIR = BASE_DIR / "sessions"                         # runtime (transcripts + état)
 
 # Mode test : pas de serveur, pas de corpus, réponses déterministes.
@@ -37,7 +42,21 @@ def _load(path: Path) -> dict:
         return json.load(f)
 
 
+def _deep_merge(base: dict, over: dict) -> dict:
+    """Fusion récursive : les clefs de ``over`` écrasent celles de ``base``, les
+    sous-dicts sont mergés en profondeur (README du jumeau / install.sh)."""
+    out = dict(base)
+    for key, value in over.items():
+        if key in out and isinstance(out[key], dict) and isinstance(value, dict):
+            out[key] = _deep_merge(out[key], value)
+        else:
+            out[key] = value
+    return out
+
+
 _CONFIG = _load(CONFIG_PATH)
+if CONFIG_LOCAL_PATH.exists():
+    _CONFIG = _deep_merge(_CONFIG, _load(CONFIG_LOCAL_PATH))
 
 
 def load_config() -> dict:
@@ -135,6 +154,18 @@ def _resolve_path(value: str) -> str:
     return str((BASE_DIR / value).resolve())
 
 
+def course_dir() -> str:
+    """Racine du cours référencé (côté enseignant), ou ``""``.
+
+    ``paths.course_dir`` (défaut vide) pointe vers le répertoire qui contient
+    ``Courses/``, ``www/`` et ``sections.json`` — posé par ``config.local.json``
+    du jumeau (``install.sh``). Vide → repli sur les chemins ``corpus/*`` du
+    dépôt (auto-contenu générique, tests unitaires).
+    """
+    value = (_CONFIG.get("paths", {}).get("course_dir") or "").strip()
+    return _resolve_path(value) if value else ""
+
+
 def gguf_dir() -> str:
     return _resolve_path(_CONFIG["paths"]["gguf_dir"])
 
@@ -144,6 +175,11 @@ def external_template() -> str:
 
 
 def corpus_root() -> str:
+    """Racine des fichiers ``.qmd`` du corpus : ``<cours>/Courses`` si le cours
+    est déclaré (``paths.course_dir``), sinon ``paths.corpus_root`` du dépôt."""
+    cd = course_dir()
+    if cd:
+        return os.path.join(cd, "Courses")
     return _resolve_path(_CONFIG["paths"]["corpus_root"])
 
 
@@ -167,12 +203,39 @@ def docs_port() -> int:
 
 def www_dir() -> str:
     """Dossier servi par tutor.docs (copie locale des pages HTML du book)."""
+    cd = course_dir()
+    if cd:
+        return os.path.join(cd, "www")
     return _resolve_path(docs().get("www_dir", "corpus/www"))
 
 
 def sections_json() -> Path:
     """Carte ligne→section générée par tools/build_docs_map.py."""
+    cd = course_dir()
+    if cd:
+        return Path(os.path.join(cd, "sections.json"))
     return Path(_resolve_path(docs().get("sections_json", "corpus/sections.json")))
+
+
+def py_dir() -> str:
+    """Dossier de la doc Python officielle locale (``docs.py_dir``), ou ``""``.
+
+    Si renseigné, ``tutor.docs`` le sert sous ``/py/`` et les citations
+    ``python:<ref>`` sont réécrites vers ce miroir local (hors-ligne) ; sinon
+    elles pointent vers https://docs.python.org/3/ (en ligne).
+    """
+    value = (docs().get("py_dir") or "").strip()
+    return _resolve_path(value) if value else ""
+
+
+def python_doc_base_url() -> str:
+    """Base des citations ``python:<ref>`` (doc Python officielle).
+
+    Miroir local ``BASE/py`` quand ``docs.py_dir`` est configuré (hors-ligne), sinon
+    ``docs.python_doc_url`` (défaut https://docs.python.org/3/ — en ligne)."""
+    if py_dir():
+        return f"{docs_base_url()}/py"
+    return (docs().get("python_doc_url") or "https://docs.python.org/3/").rstrip("/")
 
 
 def corpus_files() -> dict[str, str]:
@@ -197,30 +260,23 @@ def model_path(model: str) -> str:
     return os.path.join(gguf_dir(), profile(model)["gguf"])
 
 
-def build_system(model: str) -> str:
-    """Système tuteur = variante ``tuteur-<model>.md`` + ``PREAMBLE.md``.
+def build_system(model: str, cwd: str = "") -> str:
+    """Prompt système projet-local, convention AGENTS : ``AGENTS.<model>.md``
+    prime sur ``AGENTS.md``, tous deux lus dans le projet ouvert (``cwd``).
 
-    Pour un profil en mode brut (``no_system_embed``, cf. ``embeds_instructions``),
-    le texte renvoyé ici est embarqué dans le premier message étudiant (voir
-    engine.run_turn) ; pour les autres profils il est posé comme premier
-    message ``role: system``.
+    Aucun prompt par défaut : si aucun de ces fichiers n'existe, renvoie ``""``
+    (pas de message système — le modèle ne reçoit que la conversation et les
+    outils). Les prompts FR vivent côté enseignant (jumeau) et sont déployés
+    dans le workspace projet par ``prompts/install-prompts.sh``, jamais dans le
+    runner.
     """
-    prof = profile(model)
-    variant = PROMPTS_DIR / prof["prompt"]
-    parts = []
-    if variant.exists():
-        parts.append(variant.read_text(encoding="utf-8").strip())
-    else:
-        socle = PROMPTS_DIR / "tuteur-socratique-AGENTS.md"
-        if socle.exists():
-            parts.append(socle.read_text(encoding="utf-8").strip())
-        else:
-            parts.append("Tu es un tuteur de programmation socratique "
-                         "pour un·e étudiant·e de master MIASHS.")
-    preamble = PROMPTS_DIR / "PREAMBLE.md"
-    if preamble.exists():
-        parts.append(preamble.read_text(encoding="utf-8").strip())
-    return "\n\n".join(parts)
+    if cwd:
+        root = Path(cwd)
+        for fname in (f"AGENTS.{model}.md", "AGENTS.md"):
+            candidate = root / fname
+            if candidate.is_file():
+                return candidate.read_text(encoding="utf-8").strip()
+    return ""
 
 
 def is_brut(model: str) -> bool:

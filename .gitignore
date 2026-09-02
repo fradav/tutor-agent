@@ -15,3 +15,6 @@ models/*.gguf.part
 # Sauvegardes locales de config (config.json.bak-*) — reconstruction via git
 *.bak-*
 *.log
+
+# Config machine (chemins du cours côté enseignant) — posée par le jumeau
+config.local.json

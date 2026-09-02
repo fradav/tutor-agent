@@ -38,12 +38,20 @@ from __future__ import annotations
 import json
 import os
 import time
+from pathlib import Path
 from typing import Any
 
 from . import config
 from .docslinks import LinkRewriter, rewrite_content
 from .llm import stream_complete
-from .tools import format_python, format_quote, grep_files, read_lines, run_python
+from .tools import (
+    format_python,
+    format_quote,
+    grep_files,
+    list_directory,
+    read_lines,
+    run_python,
+)
 
 # Nombre raisonnable de tokens pour le body /v1/chat/completions : rester sur
 # ~1/8 du contexte (la config stocke le contexte -c 32768 ; le passer en entier
@@ -71,15 +79,13 @@ RECOVERY_PROMPT = ("Écris maintenant ta réponse à l'étudiant, en français, 
                    "directement après le [/THINK], sans séparateur ni "
                    "introduction. Ne mets pas ta réponse dans le raisonnement.")
 
-# Spécification OpenAI des outils natifs du tuteur (mode outils standard,
-# Option B) : `grep_files` / `read_lines` — lecture seule sur le corpus. C'est
-# **le modèle** qui déclenche les appels (tool_choice="auto" dans llm.py) ;
-# l'engine exécute le vrai outil (résultats réels fichier:ligne ou « no match »)
-# et renvoie le résultat en `role:"tool"`. Volontairement minimal : 2 outils,
-# le socle dont les petits modèles se saisissent sans se disperser.
-# Rappel des fichiers du corpus (clé=nom), renvoyé dans les descriptions d'outil
-# pour que le modèle passe une clé (« 01 ») ou un nom de fichier au lieu d'un
-# chemin imaginaire (« Courses », « asyncio.qmd ») qui ne résout à rien.
+# Spec of the tutor's native tools (standard-tool mode, Option B):
+# grep_files / read_lines / list_directory — read-only over the course material
+# AND the open project (session cwd). *The model* triggers the calls
+# (tool_choice="auto" in llm.py); the engine executes the real tool (real
+# file:line results or "no match") and returns the result in role:"tool".
+# Course files (key=name) are recalled in the descriptions so the model passes a
+# key ("01") or a file name instead of a made-up path that resolves to nothing.
 _CORPUS_HINT = ", ".join(
     f"{k}={f}" for k, f in sorted(config.corpus_files().items())
 )
@@ -90,17 +96,18 @@ TOOLS_SPEC = [
         "function": {
             "name": "grep_files",
             "description": (
-                "Cherche un motif regex dans des fichiers du corpus du cours. "
-                "Fichiers du corpus (clé=nom) : " + _CORPUS_HINT + ". "
-                "Passez une clé (ex. « 01 ») ou un nom de fichier en `paths`."
+                "Search a regex pattern in the course material or the open "
+                "project files. Course files (key=name): " + _CORPUS_HINT + ". "
+                "Pass a key (e.g. \"01\"), a file name, or a project-relative "
+                "path in `paths`."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "pattern": {"type": "string", "description": "Regex à chercher"},
+                    "pattern": {"type": "string", "description": "Regex to search"},
                     "paths": {"type": "array", "items": {"type": "string"},
-                              "description": "Fichiers du corpus (clés ou noms), ex. [\"01\"]"},
-                    "max_shown": {"type": "integer", "description": "Nb max de lignes", "default": 8},
+                              "description": "Course files (keys or names) or project-relative paths, e.g. [\"01\"] or [\"src/main.py\"]"},
+                    "max_shown": {"type": "integer", "description": "Max lines shown", "default": 8},
                 },
                 "required": ["pattern", "paths"],
             },
@@ -111,19 +118,39 @@ TOOLS_SPEC = [
         "function": {
             "name": "read_lines",
             "description": (
-                "Lit une plage de lignes d'un fichier du corpus. "
-                "Fichiers du corpus (clé=nom) : " + _CORPUS_HINT + ". "
-                "Passez une clé (ex. « 01 ») ou un nom de fichier en `path`."
+                "Read a line range of a course file or an open-project file. "
+                "Course files (key=name): " + _CORPUS_HINT + ". "
+                "Pass a key (e.g. \"01\"), a file name, or a project-relative "
+                "path in `path`."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "path": {"type": "string",
-                              "description": "Clé du corpus (ex. « 01 ») ou nom de fichier"},
-                    "start": {"type": "integer", "description": "Première ligne (>= 1)"},
-                    "num": {"type": "integer", "description": "Nombre de lignes (>= 1)"},
+                              "description": "Course key (e.g. \"01\"), a file name, or a project-relative path"},
+                    "start": {"type": "integer", "description": "First line (>= 1)"},
+                    "num": {"type": "integer", "description": "Number of lines (>= 1)"},
                 },
                 "required": ["path", "start", "num"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_directory",
+            "description": (
+                "List a directory of the open project (or the course root). "
+                "Pass a project-relative path (e.g. \".\" or \"src\")."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string",
+                              "description": "Project-relative directory path (e.g. \".\" or \"src\")"},
+                    "max_entries": {"type": "integer", "description": "Max entries shown", "default": 15},
+                },
+                "required": [],
             },
         },
     },
@@ -347,7 +374,7 @@ def initial_state(
     """
     prof = config.profile(model)
     no_system_embed = config.embeds_instructions(model)
-    system_text = config.build_system(model)
+    system_text = config.build_system(model, cwd=cwd)
     return {
         "id": session_id,
         "model": model,
@@ -384,21 +411,33 @@ def _clamp_int(value, default: int = 1) -> int:
     return max(default, n)
 
 
-def _resolve_tool_paths(path: str) -> list[str]:
-    """Résout un chemin demandé par le modèle vers des chemins absolus du corpus.
+def _resolve_tool_paths(path: str,
+                       project_dir: str | None = None) -> list[str]:
+    """Resolves a model-requested path to absolute paths under a read-only root.
 
-    Ordre de tolérance : clé courte (« 01 ») → fichier .qmd ; nom de fichier
-    exact ; glob `*`/`?` → tous les fichiers ; sous-chaîne (le nom demandé est
-    contenu dans un nom du corpus ou l'inverse). Sans aucune résolution, rend
-    ``[]`` : ``_exec_tool`` produit alors un message « chemin inconnu » explicite
-    au lieu d'un 0-match muet que le modèle re-demanderait en boucle.
+    Two roots, in order:
+    1. the course material — tolerance order: short key ("01") → .qmd file;
+       exact file name; glob `*`/`?` → all corpus files; substring (requested
+       name contained in a corpus name or the reverse);
+    2. the open project (``project_dir`` = session cwd): project-relative
+       paths, no absolute, no `..` (the agent must never escape the opened
+       workspace).
+
+    Unresolved → ``[]``: ``_exec_tool`` then emits an explicit "unknown path"
+    message instead of a silent 0-match the model would re-request in a loop.
     """
     files = config.corpus_files()
     root = config.corpus_root()
     if path in files:
         return [os.path.join(root, files[path])]
     if "*" in path or "?" in path:
-        return [os.path.join(root, f) for f in files.values()]
+        matched = [
+            os.path.join(root, f)
+            for f in files.values()
+            if Path(f).match(path)
+        ]
+        if matched:
+            return matched
     base = os.path.basename(path)
     exact = [os.path.join(root, f) for f in files.values() if base == f]
     if exact:
@@ -409,23 +448,58 @@ def _resolve_tool_paths(path: str) -> list[str]:
         for f in files.values()
         if needle and (needle in f.lower() or f.lower() in needle)
     ]
-    return hits
+    if hits:
+        return hits
+    if project_dir:
+        return _resolve_project_paths(path, project_dir)
+    return []
 
 
-def _exec_tool(name: str, args: dict) -> tuple[dict, str]:
-    """Exécute un tool_call du modèle : lecture seule **réelle** du corpus.
+def _resolve_project_paths(path: str, project_dir: str) -> list[str]:
+    """Resolves a **project-relative** path under ``project_dir`` (read-only).
 
-    Rend ``(trace, result)`` — trace au format transcript §3 (``grep`` /
-    ``read_file``, cf. l'ancien ``_expand_trace``) pour ``turn["tools"]``, et
-    ``result`` texte à renvoyer au modèle en ``role:"tool"``. Arguments JSON
-    invalides → résultat d'erreur sans jamais faire tomber la boucle outillée.
+    Refuses absolute paths and ``..`` climb (the ACP must not expose arbitrary
+    machine paths); `*`/`?` globs resolve via ``Path.glob``. Returns existing
+    entries (file **or** directory) anchored under the resolved project root.
+    """
+    if os.path.isabs(path) or ".." in path.replace("\\", "/").split("/"):
+        return []
+    root = Path(project_dir).resolve()
+    pattern = Path(path)
+    try:
+        candidates = (root.glob(str(pattern))
+                      if ("*" in str(pattern) or "?" in str(pattern))
+                      else [root / pattern])
+    except (ValueError, OSError):
+        return []
+    out: list[str] = []
+    for cand in candidates:
+        try:
+            resolved = cand.resolve()
+            resolved.relative_to(root)
+        except (ValueError, OSError):
+            continue
+        if resolved.exists():
+            out.append(str(resolved))
+    return out
+
+
+def _exec_tool(name: str, args: dict,
+               project_dir: str | None = None) -> tuple[dict, str]:
+    """Executes a model tool_call: real read-only access to the course material
+    and/or the open project.
+
+    Returns ``(trace, result)`` — trace in transcript §3 format (``grep`` /
+    ``read_file``, cf. the old ``_expand_trace``) for ``turn["tools"]``, and
+    ``result`` text returned to the model in role:"tool". Invalid JSON args →
+    error result without ever crashing the tool loop.
     """
     if name == "grep_files":
         requested = args.get("paths") or []
         paths: list[str] = []
         unknown: list[str] = []
         for p in requested:
-            resolved = _resolve_tool_paths(p)
+            resolved = _resolve_tool_paths(p, project_dir)
             if resolved:
                 paths += resolved
             else:
@@ -437,27 +511,42 @@ def _exec_tool(name: str, args: dict) -> tuple[dict, str]:
                  "files": files, "matches": total}
         if unknown and not paths:
             result = (
-                "grep_files: 0 correspondance — chemin(s) inconnu(s) du corpus : "
-                + ", ".join(unknown)
-                + f". Clés valides : {_CORPUS_HINT}"
+                "grep_files: 0 matches — unknown path(s): " + ", ".join(unknown)
+                + f". Valid corpus keys: {_CORPUS_HINT}"
             )
         else:
-            result = (f"grep_files: {total} correspondances (fichiers: {files})\n"
+            result = (f"grep_files: {total} matches (files: {files})\n"
                       + "\n".join(shown))
         return trace, result
     if name == "read_lines":
         requested = args.get("path", "")
-        resolved = _resolve_tool_paths(requested)
+        resolved = _resolve_tool_paths(requested, project_dir)
         if not resolved:
             return ({"tool": "read_file", "section": requested, "lines": "−"},
-                    "read_lines: chemin inconnu du corpus : " + _CORPUS_HINT)
+                    "read_lines: unknown path: " + _CORPUS_HINT)
         start = _clamp_int(args.get("start"), 1)
         num = _clamp_int(args.get("num"), 1)
         shown = read_lines(resolved[0], start, num)
         trace = {"tool": "read_file", "section": requested,
                  "lines": f"{start}-{start + num - 1}"}
         return trace, "read_lines\n" + "\n".join(shown)
-    return {"tool": "other", "name": name}, f"outil inconnu: {name}"
+    if name == "list_directory":
+        requested = args.get("path") or ""
+        if project_dir and requested in ("", ".", "./"):
+            target = [str(Path(project_dir).resolve())]
+        else:
+            target = [p for p in _resolve_tool_paths(requested, project_dir)
+                      if os.path.isdir(p)]
+        if not target:
+            hint = (f". Valid corpus keys: {_CORPUS_HINT}"
+                    if not project_dir else "")
+            return ({"tool": "list_directory", "path": requested or "."},
+                    "list_directory: unknown path: " + (requested or ".") + hint)
+        entries = list_directory(target[0],
+                                 max_entries=args.get("max_entries", 15))
+        trace = {"tool": "list_directory", "path": requested or "."}
+        return trace, "list_directory\n" + "\n".join(entries)
+    return {"tool": "other", "name": name}, f"unknown tool: {name}"
 
 
 def _expand_plan(plan: list[dict]) -> list[tuple]:
@@ -818,15 +907,19 @@ class TutorEngine:
                 except json.JSONDecodeError:
                     args = {}
                 if name == "read_lines":
-                    title = "Lecture des lignes du corpus"
+                    title = "Read lines from the material"
                     path = args.get("path")
                 elif name == "grep_files":
-                    title = "Recherche dans le corpus (grep)"
+                    title = "Search the material (grep)"
                     path = None
+                elif name == "list_directory":
+                    title = "List directory"
+                    path = args.get("path")
                 else:
                     title = name
                     path = None
-                trace, result = _exec_tool(name, args)
+                trace, result = _exec_tool(name, args,
+                                           self.state.get("cwd") or None)
                 yield ("tool_start", {"tool_call_id": tc.get("id"), "tool": name,
                                        "title": title, "path": path, "args": args})
                 # Affichage : le résultat de lecture (lignes ``fichier:ligne``)

@@ -1,256 +1,181 @@
-# Tuteur socratique — agent ACP pour Zed
+# Socratic tutor — Python ACP agent for Zed
 
-Agent tuteur de programmation socratique branché sur Zed via le protocole
-[ACP](https://github.com/zed-industries/agent-client-protocol). C'est un
-**agent externe** (clef `agent_servers` de Zed, `"type": "custom"`) : il possède
-tson propre appel de modèle (llama.cpp), son propre prompt système (les prompts
-`tutor/prompts/tuteur-*.md`) et ses propres outils — Zed ne fait qu'héberger le
-fil de discussion. Il **ne fait que lire** le corpus de cours (jamais de
-modification de fichiers) et n'exécute que le code de l'étudiant quand vous le
-lui demandez explicitement.
+A generic, model-agnostic **external agent** for Zed (Agent Client Protocol,
+ACP) that gives small local models a **fully controlled system prompt**. Zed
+only hosts the conversation thread: the agent owns the model call (llama.cpp
+router), the system prompt, and the tools — none of Zed's `agent_loop`
+scaffolding reaches the model.
 
-Deux modalités de lecture du corpus, **par modèle** (clef
-`profiles.<modèle>.tools` de `config.json`) :
+Two properties make this useful for tutoring:
 
-- **outils natifs** (défaut de tous les profils) : le modèle déclenche
-  lui-même `grep_files` / `read_lines` (spec `tools` OpenAI) et l'engine exécute
-  la vraie lecture, lecture seule, résultats réels ;
-- **Ask** (`"tools": "ask"`) : l'engine exécute un plan de lecture prédéfini et
-  injecte les résultats dans le prompt en blocs QUOTE neutres — le modèle ne
-  voit jamais de syntaxe d'outil. Expérimental (testé puis écarté : aucun gain
-  significatif) — aucun profil ne l'utilise, le code reste disponible.
+- **100% controlled prompt** — no default prompt is baked in. The agent reads
+  the `AGENTS.md` / `AGENTS.<model>.md` convention from the **project opened in
+  Zed** (the session `cwd`). A course deploys its persona files there (the
+  private `MIASHS-Configuration-Tutorat` repo ships a `prompts/install-prompts.sh`
+  for this) — nothing French or course-specific lives in this public repo.
+- **Read-only, scoped tools** — the model can read the course material (`Courses/
+  *.qmd`, the rendered book, the official Python doc) *and* the files of the open
+  project, with bounded paths (no absolute path, no `..`). References the model
+  writes as `fichier.qmd:line` and `python:<ref>` come back as **clickable links**
+  into the locally served docs.
 
-Trois modèles locaux (llama.cpp) :
+Language: **English**. French content (the tuteur prompts) is kept out of this
+repo — see the private twin at the end.
 
-| Modèle | gguf | Template | Particularité |
-|--------|------|----------|----------------|
-| `qwen3.5-4B` | `Qwen3.5-4B-UD-Q8_K_XL.gguf` | externe (`qwen3.5-chat-template.jinja`) | **défaut** — léger, ancrage fiable |
-| `ornith-1.5-9B` | `Ornith-1.5-9B-Q4_K_M.gguf` | embarqué | longues sessions socratiques |
-| `gemma-4-E4B` | `gemma-4-E4B_q4_0-it.gguf` | embarqué | option exactitude, à superviser |
+## Models
+
+Three local models (llama.cpp), served by a single **router** `llama-server` on
+port 8025:
+
+| Model | GGUF | Template | Notes |
+|--------|------|----------|-------|
+| `qwen3.5-4B` | `Qwen3.5-4B-UD-Q8_K_XL.gguf` | external (`models/qwen3.5-chat-template.jinja`) | **default** — light, reliable anchoring |
+| `ornith-1.5-9B` | `Ornith-1.5-9B-Q4_K_M.gguf` | embedded | longer socratic sessions |
+| `gemma-4-E4B` | `gemma-4-E4B_q4_0-it.gguf` | embedded, gemma channel | accuracy option, to supervise |
+
+Sampling (all three): `temperature 0.6`, `top_p 0.95`, `top_k 20`, `min_p 0.0`,
+`repeat_penalty 1.0`. Sources of truth: `config.json` → `profiles`.
 
 ---
 
-## 1. Prérequis
+## 1. Prerequisites
 
 - Python **3.10+**
-- `uv` (gestionnaire d'environnement Python) — `brew install uv` ou l'installeur
-  autonome <https://docs.astral.sh/uv/> (`uv sync` crée et gère le `.venv/`).
-- `llama-server` (llama.cpp) — installé via Homebrew (`brew install llama.cpp`,
-  **version stable ≥ 0.3.0** requise : c'est elle qui porte le **mode routeur**)
-  ou un binaire précompilé présent dans le PATH.
-- ~17 Go libres au total (les 3 .gguf font ~4-6 Go chacun).
+- `uv` — `brew install uv` (<https://docs.astral.sh/uv/>; `uv sync` creates and
+  manages `.venv/`)
+- `llama-server` (llama.cpp) — Homebrew `brew install llama.cpp` (**≥ 0.3.0**:
+  this is the version with the **router mode**) or a prebuilt binary on `PATH`.
+- ~17 GB free (the three `.gguf` are ~4–6 GB each).
 
-## 2. Installation
+## 2. Install
 
 ```bash
-cd /chemin/vers/Tutor-agent
+cd Tutor-agent
 
-# 1. Dépendances Python — crée .venv/ (seule dépendance : le SDK ACP)
+# 1. Python deps — creates .venv/ (only dependency: the ACP SDK)
 uv sync
 
-# 2. Télécharger les modèles (reprise `curl -L -C -` : relancer suffit)
-uv run python models/fetch_models.py        # les 3 .gguf → models/
-# options utiles :
-uv run python models/fetch_models.py --list # noms + tailles attendues
+# 2. Download the models (resumable: `curl -L -C -`, rerunning is enough)
+uv run python models/fetch_models.py            # all 3 .gguf → models/
+uv run python models/fetch_models.py --list     # names + expected sizes
 uv run python models/fetch_models.py --only Qwen3.5-4B-UD-Q8_K_XL.gguf
 ```
 
-> Sans `uv` : `python3 -m venv .venv && .venv/bin/pip install 'agent-client-protocol>=0.12'`
-> puis remplacez `uv run python` par `.venv/bin/python` dans les commandes ci-dessous.
+Without `uv`: `python3 -m venv .venv && .venv/bin/pip install
+'agent-client-protocol>=0.12'`, then replace `uv run python` with
+`.venv/bin/python`.
 
-Le template externe `models/qwen3.5-chat-template.jinja` est **fourni** dans le
-livrable (artefact adapté pour llama.cpp) — pas besoin de le télécharger.
-Le corpus de cours (`corpus/Courses/*.qmd`) est aussi fourni.
+The external template `models/qwen3.5-chat-template.jinja` and the sample corpus
+(`corpus/Courses/*.qmd`, `corpus/www/`, `corpus/sections.json`) are shipped.
 
-## 3. Branchement dans Zed
+## 3. System prompt: AGENTS convention, no default
 
-Dans `settings.json` de Zed :
+The runner has **no default system prompt**. At session creation it reads, from
+the project opened in Zed (the session `cwd`, `tutor/config.py::build_system`):
+
+1. `<cwd>/AGENTS.<model>.md` — used when that model is active;
+2. otherwise `<cwd>/AGENTS.md` — the shared base;
+3. if neither exists → **no system message** (only the conversation + tools).
+
+The model variant *replaces* the base (nothing is appended at load time), so a
+deployed `AGENTS.<model>.md` is expected to be the full prompt. Course-specific
+prompts are **not** committed here: the private `MIASHS-Configuration-Tutorat`
+repo keeps them and deploys them per workspace with
+`prompts/install-prompts.sh`.
+
+## 4. Wiring in Zed
+
+`settings.json`:
 
 ```json
 {
   "agent_servers": {
     "tuteur": {
       "type": "custom",
-      "command": ["uv", "run", "--project", "/chemin/vers/Tutor-agent", "python", "/chemin/vers/Tutor-agent/acp_agent.py"]
+      "command": ["uv", "run", "--project", "/abs/path/to/Tutor-agent", "python", "/abs/path/to/Tutor-agent/acp_agent.py"]
     }
   }
 }
 ```
 
-C'est `uv` qui résout (et crée s'il manque) le `.venv/` — aucun chemin vers un
-interpréteur à câbler. Si `uv` n'est pas dans le PATH de Zed, donnez son chemin
-absolu (ex. `/opt/homebrew/bin/uv`).
+`uv` resolves (and creates if missing) the `.venv/`. If `uv` is not on Zed's
+PATH, use its absolute path (e.g. `/opt/homebrew/bin/uv`). Reload Zed (or the
+settings), then pick **tuteur** in the agent picker.
 
-Relancez Zed (ou rechargez les settings), puis sélectionnez **tuteur** comme
-agent dans le sélecteur d'agent.
+## 5. First launch
 
-## 4. Premier lancement
-
-Un **seul** llama-server (mode **routeur**) sert les 3 modèles sur le port
-8025 : il est lancé automatiquement par l'agent au besoin, en préchargeant le
-modèle par défaut (`qwen3.5-4B`). Pour vérifier/contrôler le backend à la main :
+One `llama-server` **router** serves the three models on port 8025; the agent
+ensures it automatically (`server.ensure`), preloading the default model. Manual
+control:
 
 ```bash
-uv run run.py start qwen3.5-4B  # s'assure que le routeur sert le modèle
-uv run run.py status           # port + alias servis + provenance
-uv run run.py stop             # arrête le llama-server routeur géré
+uv run run.py start qwen3.5-4B   # ensure the router serves the model
+uv run run.py status             # port + served aliases + provenance
+uv run run.py stop               # stop the managed router
 ```
 
-`start` (et `server.ensure` appelé par l'agent) **synchronise automatiquement le
-preset du routeur** : le routeur ne relit `servers/models-router.ini` qu'au
-démarrage, donc si le preset en mémoire ne sert pas les alias actuels de
-`config.json` (ex. après édition de la config), il est régénéré + redémarré une
-fois ; si le routeur sert déjà un modèle du preset actuel, il est **adopté sans
-redémarrage** (le switch instantané par requête reste de mise).
+`start` / `ensure` synchronize the router preset: if the in-memory preset no
+longer serves the current `config.json` aliases it regenerates + restarts once;
+if it already serves a current-alias model it is **adopted without restart**
+(instant switch per request remains in effect).
 
-Quand Zed recharge l'agent (ou redémarre) avec une conversation encore ouverte,
-il envoie `session/load` : l'agent restaure la session persistée
-(`sessions/<id>.json`) et rejoue l'historique dans l'interface — la discussion
-reprend où elle s'était arrêtée, sans démarrage de llama-server supplémentaire.
-L'état est écrit dès la **création** de la session (`session/new`) : même une
-conversation vide se recharge ; en l'absence de tout état, l'agent reconstruit
-une **session vierge** (modèle déduit du préfixe du `sessionId`) au lieu
-d'échouer.
+Sessions persist (`sessions/<id>.json`): on `session/load` the agent restores
+the transcript and continues. State is written at `session/new`, so even an
+empty conversation reloads.
 
-## 5. Changer de modèle
+## 6. Switching model
 
-Le modèle est choisi à la création de session via le **sélecteur ACP** (voir
-ci-dessous) ; le fichier `.tutor-model` à la racine du répertoire depuis lequel
-vous lancez Zed ne sert que de **défaut** lu au `session/new` (par défaut
-`qwen3.5-4B` s'il n'existe pas). Pour fixer ce défaut, créez ce fichier et
-écrivez-y le nom du modèle :
+The model is chosen per session via the ACP **Modèle** selector (one option per
+profile). A `<cwd>/.tutor-model` file (containing a profile key) still sets the
+**default** read at `session/new`; `config.json → default_model` applies if
+neither is present. Changing the model recreates the session (the thread is not
+carried across models). With the router, the switch is instant, without killing
+the process.
 
-```
-qwen3.5-4B
-```
+> Remote models: set `profiles.<model>.endpoint` to a URL — the agent then
+> drives nothing locally (no start/stop), it just pings the endpoint.
 
-Valeurs : `qwen3.5-4B`, `ornith-1.5-9B`, `gemma-4-E4B`.
-
-### Sélecteur ACP (recommandé)
-
-L'agent expose un sélecteur natif **modèle** (`config_options` renvoyées par
-`session/new`, handler `session/set_config_option`) : le modèle se choisit
-directement dans l'interface Zed à la création de la session, sans toucher
-au disque. Changer le modèle recrée la session avec le nouveau profil (le fil
-de discussion n'est pas reporté d'un modèle à l'autre).
-
-> Avec le mode routeur, le changement de modèle est **instantané et sans
-> redémarrage** : le routeur décharge/charge le modèle demandé à la prochaine
-> requête (une seule instance llama-server, le process n'est jamais tué).
-
-> Si vous préférez servir les modèles sur des endpoints **distant**s (machine
-> de labo, autre poste) : mettez l'URL dans `profiles.<modèle>.endpoint` de
-> `config.json` — l'agent pilotera alors rien du tout (pas de start/stop
-> local), il pinguera simplement l'endpoint.
-
-### Model cards (référence)
+### Model cards
 
 - Qwen3.5-4B — <https://huggingface.co/unsloth/Qwen3.5-4B-GGUF>
 - Ornith-1.5-9B — <https://huggingface.co/ornith-ai/Ornith-1.5-9B-GGUF>
 - Gemma-4-E4B (qat) — <https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf>
 
-## 6. `config.json` — déjà réglé pour un usage autonome
+## 7. Tools (read-only, two roots)
 
-Le fichier est livré avec des chemins **relatifs**, résolus par rapport à
-`Tutor-agent/` (pas au dossier courant) — aucune édition n'est nécessaire pour
-un usage clé-en-main :
+`TOOLS_SPEC` (English): `grep_files`, `read_lines`, `list_directory`. The model
+triggers them via native `tool_calls`; `_exec_tool` performs the real read.
 
-- `paths.gguf_dir` → `models` (les .gguf téléchargés ou copiés y arrivent) ;
-- `paths.external_template` → `models/qwen3.5-chat-template.jinja` (qwen3.5-4B seul) ;
-- `paths.corpus_root` → `corpus/Courses` ;
-- `server.llama_bin` → `llama-server` (résolu via le PATH).
+Paths resolve against two roots, in order (`_resolve_tool_paths`):
 
-Valeurs par défaut livrées :
+1. **course material** — tolerance order: short key (`"01"`) → `.qmd` file;
+   exact filename; glob `*`/`?` (only globs matching a corpus filename);
+   substring match;
+2. **open project** (`session cwd`) — project-relative paths, resolved via
+   `_resolve_project_paths`: **absolute paths and `..` climbs are refused**, and
+   every result is bounded under the resolved project root.
 
-```json
-"paths": {
-  "gguf_dir": "models",
-  "external_template": "models/qwen3.5-chat-template.jinja",
-  "corpus_root": "corpus/Courses",
-  "sessions_dir": "sessions"
-}
-```
+Unresolved → the tool replies with an explicit "unknown path" message (no
+silent 0-match the model would re-request in a loop). Only the model's reads are
+executed — no write tool exists.
 
-Le sampling, le template et le mode de chaque modèle sont déjà réglés dans
-`profiles` — pas besoin d'y toucher.
+## 8. Clickable local docs
 
-Si vous placez les .gguf ailleurs, changez `paths.gguf_dir` (ou passez `--dest`
-à `fetch_models.py`) ; `llama-server` peut être remplacé par un chemin absolu
-vers un autre binaire.
+The engine rewrites outgoing citations into HTTP links (never into the model
+context):
 
-### Fallback distant (endpoint + clef API)
+- `fichier.qmd:ligne` → link to the rendered book page + section anchor
+  (`www/` served on port 8765, anchors from `sections.json` — generated by
+  `tools/build_docs_map.py`);
+- `python:<ref>` → link to the official Python doc. Two targets,
+  `config.docs.python_doc_url` (online) or the local mirror
+  `config.docs.py_dir` served under `/py/` when set (offline).
 
-En complément du routeur local, le harnais sait basculer sur un **endpoint
-distant** (machine de labo / autre poste) par profil ou en secours :
+The docs server (`tutor/docs.py`) therefore serves **two roots**: the course
+book at `/` and the Python doc at `/py/` (when configured). It is auto-started
+by `acp_agent.py`.
 
-- **`config.json → fallback`** : `endpoint` (ex. `http://<hote>:8080`) et
-  `api_key` (Bearer, optionnelle mais recommandée dès qu'on n'est plus en
-  localhost). `endpoint` vide (défaut livré) → fallback désactivé : usage
-  local inchangé. Un `endpoint` renseigné sous `profiles.<modèle>` prime sur
-  le fallback pour ce modèle.
-- **`tools/download_gguf.sh`** : télécharge les **3 gguf retenus** (qwen3.5,
-  ornith, gemma4) + le template Qwen3.5 via `uvx --from huggingface-hub hf
-  download`, dans `$GGUF_TUTORDIR` (défaut `models/`). Usage :
-  `GGUF_TUTORDIR=/chemin ./tools/download_gguf.sh` (tout) ou `… qwen3.5`
-  (un seul). gemma est gated (repo `google/…`) : exporter `HF_TOKEN`.
-- **`tools/llama-swap-tuteur.example.yaml`** : les **3 entrées** à poser dans
-  la config llama-swap de **l'hôte distant** (`/etc/llama-swap/config.yaml`),
-  avec `apiKeys` (une seule clef, la même que `fallback.api_key`), une macro
-  commune aux drapeaux du routeur local (`-c 32768 --jinja
-  --reasoning-preserve`) et `GGUF_TUTORDIR` comme répertoire des gguf :
-
-```bash
-GGUF_TUTORDIR=/chemin/vers/les/gguf \
-  LLAMASWAP_API_KEY="$(printf 'sk-%s\n' "$(head -c 48 /dev/urandom | base64)")" \
-  llama-swap --config /etc/llama-swap/config.yaml --listen 0.0.0.0:8080
-```
-
-  Le tuteur envoie déjà sampling + reasoning_format + tools par body (aucun
-  `filters.stripParams` nécessaire) ; seul `fallback.api_key` doit être le
-  reflet de `apiKeys` de l'hôte.
-
-## 7. Tests
-
-```bash
-# tests backend (génération du preset routeur + cmd llama-server) — aucun modèle requis
-uv run python -m unittest tests/test_server.py -v
-
-# tests protocole (moteur en STUB) — aucun serveur ni corpus requis
-TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
-
-# tests llm (auth fallback distant : endpoint + clef API, mock urlopen) — hors ligne
-uv run python -m unittest tests/test_llm.py -v
-
-# tout-en-un (50 tests) — test_server pur, test_protocol en STUB, test_tools
-# couvre avec des vrais contenus (carte sections.json + serveur localhost sur corpus/www),
-# test_llm hors ligne (mock urlopen)
-TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
-```
-
-Le mode routeur est documenté par llama.cpp (`tools/server/README.md`, § Using
-multiple models). Le preset généré est traçable dans `servers/models-router.ini`
-(une section par alias, régénéré à chaque `start`).
-
-## 8. Citations cliquables vers une doc locale
-
-Pour que les citations du modèle soient consultables, l'engine réécrit les
-références `fichier.qmd:ligne` qu'il voit sortir du modèle en **liens HTTP
-cliquables** vers une copie locale du book rendu :
-
-- **Serveur statique** (`uv run python run.py serve-docs`, auto-démarré par
-  `acp_agent.py`) : sert `corpus/www/` — copie du `docs/` rendu du book
-  (<https://fradav.github.io/miashs-2026-2027-advanced-programming/>), HTML +
-  `site_libs/` + `images/` + `search.json`, port 8765 (`config.json` → `docs`).
-- **Réécriture déterministe** côté engine (`tutor/docslinks.py`) : dans le message
-  visible sortant (jamais dans le contexte envoyé au modèle),
-  `Cours/x.qmd:ligne` → `[Cours/x.qmd:ligne](http://127.0.0.1:8765/Courses/x.html#ancre)`.
-  Présent en outils natifs comme en mode Ask, aucun changement de prompt.
-- **Carte ligne → section** (`corpus/sections.json`, générée par
-  `tools/build_docs_map.py` depuis les `.qmd` + les ancres réelles du HTML rendu) :
-  ligne hors section → lien vers la page sans `#` ; fichier inconnu → pas de lien.
-
-Re-synchroniser le cache (le book est rendu dans
-`Cours-programmation-MIASHS-2026/docs/`) :
+Re-sync the rendered book cache:
 
 ```bash
 rsync -a --delete --exclude slides/ --exclude downloads/ \
@@ -258,41 +183,91 @@ rsync -a --delete --exclude slides/ --exclude downloads/ \
 uv run python tools/build_docs_map.py
 ```
 
-Exclusions par défaut : `slides/` (lourd) et `downloads/`, et volontairement
-**aucune solution** (risque de fuite de corrigé dans le contexte du modèle).
+Exclusions: `slides/`, `downloads/`, and deliberately **no solutions** (no
+leak of corrected exercises into the model context).
 
-Limites connues : le clic sur le lien dans la conversation Zed dépend du rendu
-markdown de Zed (à valider en pratique) ; la doc Python officielle
-(`MIASHS-2026/python-doc/`) n'a pas ce rendu HTML cliquable.
+## 9. config.json — generic by default, overridden locally
 
-## 9. Pourquoi un agent ACP ? (et pourquoi pas « Zed + Ask + prompt effacé »)
+`config.json` ships with **relative** paths resolved against `Tutor-agent/` (not
+the `cwd`), so the deliverable is self-contained:
 
-**Peut-on simplement effacer le prompt système de Zed ?** Pour un **modèle**
-déclaré dans *LLM Providers* et utilisé par l'agent Zed intégré : **non**. Zed
-préfixe chaque requête d'un gros prompt système (~3 000-4 000 tokens — règles de
-communication, formatage, usage détaillé des outils) que l'on ne peut que
-**compléter** (instructions, profils d'agent, context servers), jamais
-remplacer. La demande visant à paramétrer/minimiser ce prompt (cruciale pour les
-petits modèles locaux) fait l'objet d'une discussion ouverte non résolue chez
-zed-industries/zed (`#58770`).
+```json
+"paths": {
+  "gguf_dir": "models",
+  "external_template": "models/qwen3.5-chat-template.jinja",
+  "corpus_root": "corpus/Courses",
+  "sessions_dir": "sessions",
+  "course_dir": ""
+},
+"docs": {
+  "base_url": "http://127.0.0.1:8765",
+  "port": 8765,
+  "www_dir": "corpus/www",
+  "sections_json": "corpus/sections.json",
+  "py_dir": "",
+  "python_doc_url": "https://docs.python.org/3/"
+}
+```
 
-Pour un **agent externe ACP** (`agent_servers`, `"type": "custom"`), en
-revanche, Zed héberge le fil de discussion mais l'agent « owns its own runtime,
-auth, model selection, tools, and native configuration » (doc *External
-Agents*). Le prompt envoyé au modèle est donc **entièrement** celui du harnais
-(`tuteur-*.md` + `PREAMBLE.md`), avec le sampling et le template du profil, sans
-rien du socle Zed. C'est la seule voie, dans Zed, vers un prompt « ad hoc,
-entièrement maîtrisé » pour des petits modèles — c'est ce que fait ce dépôt.
+A **machine-specific** `config.local.json` (deep-merged over `config.json`,
+gitignored, never committed) carries the course paths: `paths.course_dir` (the
+folder holding `Courses/`, `www/`, `sections.json`) and `docs.py_dir` (the local
+Python doc). The private twin's `install.sh` generates it; with both empty, the
+repo's own `corpus/` and the online Python doc are used.
 
-**Alors « l'agent Zed + Ask (context server) + routeur llama.cpp » ne
-suffirait pas ?** Non pour l'objectif « prompt maîtrisé » : le modèle passerait
-quand même sous le prompt système Zed (non effaçable) et sous toute la surface
-d'outils native de l'agent Zed (édition, terminal…), dont les schémas gonflent
-le premier appel de plusieurs milliers de tokens — exactement le contexte qui
-fait déraper les modèles 4-9 B locaux (confusion de format d'outils, fuite de
-corrigé, répétition). Le harnais apporte ce que Zed ne laisse pas régler : prompt
-ad hoc par modèle, deux outils de lecture minimalistes déclenchés par le modèle
-(résolution tolérante des chemins, retry/recovery), sampling + template +
-splitter de raisonnement par famille, mode Ask en option de profil, persistance
-de session, et un routeur llama.cpp à instance unique (switch instantané, sans
-redémarrage).
+### Remote fallback (endpoint + API key)
+
+Beyond the local router, the harness can fall back to a **remote endpoint**
+(lab machine / other host), per profile or as a last resort:
+
+- `config.json → fallback`: `endpoint` (e.g. `http://<host>:8080`) and
+  `api_key` (Bearer). Empty `endpoint` (shipped default) → fallback disabled.
+  `profiles.<model>.endpoint` overrides the fallback for that model.
+- See `tools/download_gguf.sh` and `tools/llama-swap-tuteur.example.yaml` for
+  setting up the remote host.
+
+## 10. Tests
+
+```bash
+# backend (router preset generation + llama-server cmd) — no models required
+uv run python -m unittest tests/test_server.py -v
+
+# protocol (engine in STUB) — no server or corpus required
+TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
+
+# llm (remote fallback auth: endpoint + API key, mocked urlopen) — offline
+uv run python -m unittest tests/test_llm.py -v
+
+# everything (73 tests): test_server pure, test_protocol & test_runner_features
+# in STUB, test_tools with real contents (sections.json + localhost server on
+# corpus/www), test_llm offline (mocked urlopen)
+TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
+```
+
+`test_runner_features` covers the refactor: AGENTS convention, project-relative
+tool paths (absolute / `..` refused), `list_directory`, `config.local.json`
+merge, `python:<ref>` rewriting (full + streaming), and the two-root docs
+server.
+
+## 11. Why an ACP agent? (and why not Zed + Ask + erased prompt)
+
+For a model declared in Zed's *LLM Providers* and used by the built-in agent:
+**Zed cannot be made to send no system prompt** — it always prefixes a large one
+(~3–4k tokens: communication rules, formatting, detailed tool use) that can only
+be *appended* to, never replaced (open discussion: zed-industries/zed #58770).
+
+For an **external ACP agent** (`agent_servers`, `"type": "custom"`), Zed hosts
+the thread but the agent "owns its own runtime, auth, model selection, tools,
+and native configuration" (External Agents docs). The prompt sent to the model is
+therefore **entirely** the agent's — the exact requirement for small local
+models (4–9B) that derail under Zed's scaffolding (tool-format confusion,
+answer leakage, repetition). This repo is that agent.
+
+## 12. Private twin
+
+The course-specific configuration lives in the private
+`MIASHS-Configuration-Tutorat/` repo (sibling): French tuteur prompts
+(`AGENTS` convention), `install.sh` (writes `config.local.json` into this
+runner), `prompts/install-prompts.sh` (deploys the prompts into a workspace),
+model-choice guidance and ACP pass findings. This repo stays generic, in
+English, and prompt-free.

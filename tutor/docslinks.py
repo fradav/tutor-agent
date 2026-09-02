@@ -1,9 +1,15 @@
-"""Liens cliquables vers le book public : réécriture ``fichier:ligne`` → lien markdown.
+"""Liens cliquables vers le book public + doc Python : réécriture des citations.
 
-Le tuteur (4 modèles, harnais ACP) cite le corpus avec ``nom.qmd:ligne`` (même
-affichage, en gras, dans ``tools.format_quote``). Cette carte transforme ces
-mentions en liens cliquables vers le book rendu, servi en local par
-``tutor.docs`` (``run.py serve-docs``) : ``[nom.qmd:ligne](BASE/chemin.html#ancre)``.
+Le tuteur (3 modèles, harnais ACP) cite le corpus avec ``nom.qmd:ligne`` (même
+affichage, en gras, dans ``tools.format_quote``) et la doc Python officielle
+avec ``python:<ref>`` (module, éventuellement ``module#ancre``). Ce module
+transforme ces mentions en liens cliquables :
+
+- ``nom.qmd:ligne`` → ``[nom.qmd:ligne](BASE/chemin.html#ancre)`` — book
+  servi en local par ``tutor.docs`` (cartes ``corpus/sections.json``) ;
+- ``python:<mod>`` → ``[python:<mod>](BASE/py/library/<mod>.html)`` (ou
+  ``https://docs.python.org/3/library/<mod>.html`` sans miroir local) — la
+  base est ``config.python_doc_base_url()``.
 
 La réécriture est **déterministe** et appliquée côté moteur (engine) sur le
 contenu visible du tour (``kind == "content"``) — les modèles n'ont pas à
@@ -17,7 +23,8 @@ titre). Le slug est l'id réel du HTML rendu (quarto : minuscules, espaces→``-
 ``.`` conservés, doublons ``-1``/``-2`` gérés).
 
 Sans ``sections.json`` (livrable sans book) ou sans base URL, la réécriture
-est neutre : le texte passe tel quel.
+du book est neutre : le texte passe tel quel. Les citations ``python:`` ne
+dépendent que de la base doc Python (en ligne par défaut).
 """
 
 from __future__ import annotations
@@ -38,10 +45,21 @@ _CITE_RE = re.compile(
     r"(?<![A-Za-z0-9_.\-])([A-Za-z0-9_][A-Za-z0-9_.\-]*\.qmd):(\d+)(?![0-9])"
 )
 
+# Une citation de doc Python : `python:<ref>` où `<ref>` = module
+# (`asyncio`, `queue`) ou module#ancre (`queue#SimpleQueue`). Frontière =
+# pas un caractère de nom — ne pas avaler `python:` suivi d'un mot courant.
+_PY_REF_RE = re.compile(
+    r"(?<![A-Za-z0-9_])python:([A-Za-z_][A-Za-z0-9_.]*(?:#[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9#_])"
+)
+
 # Suffixe de fin de chunk qui peut être un début de citation coupé en deux :
 # on retient tout suffixe susceptible de devenir `*.qmd`, `*.qmd:`, `*.qmd:1`…
-# pour ne pas casser un lien dont la suite arrive dans le chunk suivant.
-_TAIL_RE = re.compile(r"[A-Za-z0-9_.\-]*\.qmd:?\d*$")
+# ou `python:`, `python:asynci`, `python:queue#…` pour ne pas casser un lien
+# dont la suite arrive dans le chunk suivant.
+_TAIL_RE = re.compile(
+    r"(?:[A-Za-z0-9_.\-]*\.qmd:?\d*"
+    r"|python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?)$"
+)
 
 # Borne haute d'un suffixe retenu : au-delà, ce n'est pas un nom de fichier
 # crédible (et on borne le buffer).
@@ -107,16 +125,34 @@ def section_url_for(fname: str, line: int, base_url: str | None = None) -> str |
     return url
 
 
+def _python_url(ref: str) -> str:
+    """URL de la doc Python pour une citation ``python:<ref>``.
+
+    Base = ``config.python_doc_base_url()`` : miroir local ``BASE/py`` quand
+    ``docs.py_dir`` est posé, sinon https://docs.python.org/3/ (en ligne).
+    ``python:queue#SimpleQueue`` → ``<base>/library/queue.html#SimpleQueue``.
+    """
+    mod, _, anchor = ref.partition("#")
+    url = f"{config.python_doc_base_url().rstrip('/')}/library/{mod}.html"
+    return f"{url}#{anchor}" if anchor else url
+
+
 def _rewrite(text: str, base_url: str) -> str:
     def _repl(m: re.Match) -> str:
         url = section_url_for(m.group(1), int(m.group(2)), base_url)
         return f"[{m.group(1)}:{m.group(2)}]({url})" if url else m.group(0)
 
-    return _CITE_RE.sub(_repl, text)
+    text = _CITE_RE.sub(_repl, text)
+
+    def _pyrepl(m: re.Match) -> str:
+        return f"[python:{m.group(1)}]({_python_url(m.group(1))})"
+
+    return _PY_REF_RE.sub(_pyrepl, text)
 
 
 def rewrite_content(text: str, base_url: str | None = None) -> str:
-    """Réécrit les mentions ``fichier:ligne`` connues d'un texte complet."""
+    """Réécrit les mentions ``fichier:ligne`` connues et ``python:<ref>`` d'un
+    texte complet (base ``base_url`` pour le book, base Python indépendante)."""
     if base_url is None:
         base_url = config.docs_base_url()
     if not base_url or not text:

@@ -1,0 +1,59 @@
+---
+title: "Module 3 — Distributed Computing"
+subtitle: "Dask, Ray, delayed, schedulers"
+---
+
+Objectives (observable criteria):
+
+- Build a **lazy** computation pipeline with `dask.delayed` and trigger it with
+  `.compute()`.
+- Explain the difference between *graph-based* (Dask) and *actor-based* (Ray) computing,
+  and choose the right tool.
+- Describe the **MapReduce / Split-Apply-Combine** pattern and recognize it in a problem.
+- List and apply `dask.delayed` best practices (no mutation, no global state, no side
+  effects).
+
+Resources: chapters `05_Distributed.qmd`, `06_Dask-Ray.qmd` and `07_Dask-delayed.qmd`
+from last year's course; official documentation
+[`dask`](https://docs.dask.org/en/stable/delayed.html) and
+[Ray](https://docs.ray.io/en/latest/).
+
+## Key points
+
+- **MapReduce / Split-Apply-Combine**: break the problem into *chunks* (split), process
+  each chunk independently (map/apply), then *merge* the partial results (reduce/combine).
+  Canonical application: word count.
+- **Dask resembles numpy/pandas but lazy**: `delayed`, `bag`, `dataframe`, `array` build a
+  **task graph**; nothing runs before `.compute()`. Scheduler (threads, processes,
+  distributed).
+- **`dask.delayed`**: turns a function into a *task* evaluated lazily; the graph nests and
+  `.compute()` orchestrates the dependencies.
+- **Ray**: actor model, state preserved between calls (`@ray.remote` on a class), plus
+  *futures*; designed for stateful services and large-scale parallelism.
+- **`delayed` best practices**: call `delayed` on the *function*, not on the result; do not
+  mutate inputs; avoid global state and side effects; split into small tasks but not too
+  small; do not use `delayed` inside an already-`delayed` function; do not apply `delayed`
+  to other Dask collections.
+- **Pitfalls**: data serialization between workers (`pickle`), saturated scheduler,
+  *lazy vs eager* confusion (forgetting `.compute()`), too many tiny tasks (scheduling
+  overhead).
+
+## Exercises
+
+1. **Distributed word count**: count the words of a set of text files with `dask.bag`
+   (`map` + `foldby`, or the equivalent), then with a list of files and `delayed`.
+   Compare times on a single file, then on several.
+2. **Lazy pipeline**: write 3–4 functions (read → clean → compute → aggregate), chain
+   them with `delayed`, check that no computation happens before `.compute()` (how can
+   you tell?), then trigger it.
+3. **Dask vs Ray**: the same computation (sum of numbers, or incrementing a counter)
+   written with Dask, then with Ray (`@ray.remote` + actor). Compare the paradigms:
+   graph vs state.
+4. **Best practices**: start from a `delayed` function that mutates a global list or a
+   shared array, show the bug (result that depends on order), then fix it by *returning*
+   the values. Justify the fix.
+5. (Track A) Have your tutor explain "why should you not call `delayed` on other Dask
+   collections?" and "what is the difference between threads and processes for the
+   scheduler?". Check each answer against the official documentation.
+   (Track B) Prepare a mini live-coding: turn a sequential loop into a Dask graph, show
+   the gain, and the case where Dask brings nothing.

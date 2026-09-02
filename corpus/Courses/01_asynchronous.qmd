@@ -1,0 +1,37 @@
+---
+title: "Module 1 — Asynchronous and Concurrency"
+subtitle: "asyncio, event loop, tasks"
+---
+
+Objectives (observable criteria):
+
+- Write a program using `asyncio` to parallelize input/output operations.
+- Explain *when* asynchronicity speeds things up (I/O) and *when* it does not (CPU-bound).
+- Describe the role of the **event loop** and of coroutines.
+
+Resources: chapter `03_Asynchronous.qmd` from last year's course; official documentation
+[`asyncio`](https://docs.python.org/3/library/asyncio.html).
+
+## Key points
+
+- **Coroutine**: a function declared `async def`; its execution does not start at the call,
+  you must *await* it or *schedule* it.
+- **Event loop**: the "conductor" that switches between coroutines when they are waiting
+  (I/O, `sleep`).
+- `await`, `asyncio.gather`, `create_task`, `asyncio.run`.
+- **GIL**: Python threads do not compute in parallel on CPU; asyncio is for I/O (network,
+  files, APIs). Do not promise the opposite to your tutor.
+- Pitfalls: **blocking the event loop** with a long synchronous call (`time.sleep`,
+  `requests` used synchronously); forgetting to `await`; misusing `gather` vs
+  `create_task`.
+
+## Exercises
+
+1. Download $N$ URLs sequentially, then with `asyncio.gather`. Time both. Why does
+   `requests` block? What should you use instead (`httpx`, `aiohttp`)?
+2. Write a small asynchronous server/client (`asyncio.start_server`) answering "pong".
+3. Trap: mix `time.sleep(1)` and `await asyncio.sleep(1)` in concurrent tasks. Time it and
+   explain the result (loop blocking).
+4. (Track A) Ask your tutor "when to use threads vs asyncio?" and "why does the GIL not
+   apply to I/O?". Check the answers against an official source and document any
+   imprecision.

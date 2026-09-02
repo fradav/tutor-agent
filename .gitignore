@@ -1,0 +1,17 @@
+# Environnement Python (recréé par `uv sync` / `uv run`)
+.venv/
+__pycache__/
+*.pyc
+
+# Runtime — régénérés au premier lancement
+sessions/
+servers/
+.tutor-model
+
+# Poids lourds — .gguf récupérés par fetch_models.py ou la clé USB (§1.3)
+models/*.gguf
+models/*.gguf.part
+
+# Sauvegardes locales de config (config.json.bak-*) — reconstruction via git
+*.bak-*
+*.log

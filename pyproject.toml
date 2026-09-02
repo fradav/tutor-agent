@@ -1,0 +1,23 @@
+# Tuteur socratique — agent ACP pour Zed (voir README.md)
+#
+# Workflow d'installation : `uv sync` (crée `.venv/`) puis `uv run …` —
+# cf. README §2. Alternative sans uv : `python3 -m venv .venv && .venv/bin/pip
+# install 'agent-client-protocol>=0.12'`.
+#
+# `agent-client-protocol` est la SEULE dépendance tierce : les appels HTTP vers
+# llama-server passent par `urllib` (stdlib) — `requests` n'est pas utilisé
+# (retiré à la bascule uv). `fetch_models.py` (téléchargement des .gguf) ne
+# dépend que de la stdlib + `curl`.
+[project]
+name = "tuteur-acp"
+version = "0.1.0"
+description = "Agent ACP tuteur socratique pour Zed (3 modèles llama.cpp : qwen3.5-4B, ornith-1.5-9B, ministral-3-8B-Reasoning)"
+requires-python = ">=3.10"
+dependencies = [
+    "agent-client-protocol>=0.12",
+]
+
+# Projet « virtuel » : on ne builde/installe pas ce projet lui-même ; `uv sync`
+# crée seulement `.venv/` avec les dépendances de `[project]` ci-dessus.
+[tool.uv]
+package = false

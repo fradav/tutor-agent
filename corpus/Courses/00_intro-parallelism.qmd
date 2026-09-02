@@ -1,0 +1,58 @@
+---
+title: "Introduction to Parallelism"
+subtitle: "Basic concepts, laws, and taxonomy"
+---
+
+**Introductory module**: common to both tracks, covered at the start of the semester. It
+provides the vocabulary used everywhere else. Full resource: chapter
+`02_Parallel-intro.qmd` from last year's course; use it as-is or have your AI tutor "teach"
+it to you.
+
+## Notions to master
+
+| Notion | Short definition |
+|---|---|
+| Task | a command or a group of commands to run |
+| Worker | a program or subprogram that executes tasks (thread, process) |
+| Resource | unit of computation (CPU core, GPU, remote machine) |
+| Input / Output (I/O) | data needed by a task / results produced |
+| Memory / storage | where the data lives |
+| Synchronization | ordering constraint between tasks (the output of one task is the input of another) |
+
+## Structuring questions
+
+1. **Sequential vs parallel**: $n$ tasks, $1$ worker → time $\sim O(n)$.
+2. **Simple parallel**: $n$ tasks, $p \ge n$ workers → time $\sim O(1)$ (bottleneck: not
+   enough workers).
+3. **Scheduling**: $p < n$ tasks per worker → time $\sim O(n/p)$.
+4. **Shared resources**: several workers on the same resource → waiting, risk of saturation
+   (organizing the access costs time).
+5. **I/O**: data not ready / results not written → workers wait; concurrent memory
+   access → bottleneck.
+
+> **Experiment to redo**: the time vs number-of-workers curve is *never* linear. Go back
+> to last year's illustrations and interpret the loss (scheduling overhead, I/O, memory).
+
+## Laws and taxonomy
+
+- **Amdahl's law**: speedup bounded by the sequential fraction (*strong* scaling,
+  fixed-size problem):
+
+  $$S_{up}(N) \le \frac{1}{S + \frac{P}{N}}$$
+
+- **Gustafson's law**: when the problem size grows with the number of units (*weak*
+  scaling), the speedup can stay nearly linear.
+- **Flynn's taxonomy**: SISD, SIMD, MISD, MIMD relate the level of parallelism
+  (instruction, thread, task) to hardware and software.
+- **Multi-processing vs multi-threading**: exclusive vs shared memory, inter-process
+  communication vs in-process calls, creation cost, concurrency level (OS vs
+  library/language).
+
+## Exercises
+
+1. A program spends 80% of its time in a parallelizable part. Compute the maximum speedup
+   with 2, 4, 16 cores (Amdahl's law). Interpret.
+2. On your machine: `python` computes a sum element by element (mentally SISD), then
+   `numpy` vectorizes. Time $n=10^6, 10^7, 10^8$. Comment on the gain and why.
+3. Explain in 5 lines the thread/process difference to your AI tutor (Track A) or
+   in your logbook (Track B), then validate with an official resource.

@@ -1,0 +1,38 @@
+---
+title: "Module 2 — IPC & Locks"
+subtitle: "multiprocessing, pipes, queues, locks, shared memory"
+---
+
+Objectives (observable criteria):
+
+- Create and coordinate **processes** with `multiprocessing` (pool, queues, pools).
+- Exchange data between processes (pipes, queues, shared memory) and choose the right
+  tool.
+- Protect a critical section with a **lock** and diagnose a *deadlock*.
+
+Resources: chapter `04_IPC-and-Locking.qmd` from last year's course; documentation
+[`multiprocessing`](https://docs.python.org/3/library/multiprocessing.html).
+
+## Key points
+
+- **Process**: *exclusive* memory, communication through IPC; started with `spawn`
+  (default on macOS/Windows) or `fork` (Linux).
+- **Queues / Pipes**: message exchange. **Shared memory** (`Value`, `Array`,
+  `shared_memory`): shared data, but it must be protected.
+- **Locks**: `Lock` to serialize a *critical section* (updating a shared counter, writing
+  a file).
+- **Deadlock**: two processes waiting on each other; wrongly ordered locking.
+- **Race conditions**: the result depends on execution order → why the lock is necessary
+  (counter illustration).
+
+## Exercises
+
+1. **Shared counter**: 8 processes increment a shared-memory counter 100 000 times each.
+   Without a lock → wrong value; with `Lock` → correct value. Measure the cost of the lock.
+2. **Producer/consumer**: one process produces integers, another consumes them through a
+   `Queue`. Test the natural waiting behavior (`queue.Empty`).
+3. **Deadlock**: deliberately create a two-resource deadlock, diagnose it (where is the
+   blockage?) then fix the acquisition order.
+4. **Pool**: compare `Pool.imap` vs a sequential loop on a CPU-bound computation.
+5. (Track B) Prepare exercise 1 as live-coding; (Track A) have your tutor explain "why is a
+   Lock necessary if the memory is shared" and assess the accuracy of the explanation.

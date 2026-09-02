@@ -135,7 +135,7 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(acp.exceptions.RequestError) as ctx:
                     await self._new_session(cwd)
         self.assertEqual(ctx.exception.code, -32603)  # internal_error
-        self.assertEqual(ctx.exception.data.get("reason"), "backend ornith-1.5-9B indisponible")
+        self.assertEqual(ctx.exception.data.get("reason"), f"backend {DEFAULT_MODEL} indisponible")
 
     async def test_new_session_returns_config_options(self) -> None:
         """session/new expose un sélecteur de modèle ACP (une option ``select``)."""

@@ -44,7 +44,9 @@ log = logging.getLogger("tuteur.protocol")
 AGENT_NAME = "tuteur-acp"
 AGENT_TITLE = "Tuteur socratique MIASHS"
 AGENT_VERSION = "0.1.0"
-DEFAULT_MODEL = "ornith-1.5-9B"
+# Modèle par défaut : suit config.json (défaut livré = qwen3.5-4B). Source
+# unique pour `session/new` sans sélecteur et pour les tests.
+DEFAULT_MODEL = config.default_model()
 MODEL_FILE = ".tutor-model"
 
 # Anciennes clefs de profil (avant le renommage q8/ornith/ministral → …),

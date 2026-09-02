@@ -4,11 +4,11 @@ Vérifie la génération du preset ROUTEUR (INI) et la ligne de commande llama-s
 sans jamais lancer de processus ni toucher au port :
   - [*] : jinja = true ; reasoning-preserve = true (global) ;
   - qwen3.5-4B : template EXTERNE (chat-template-file qwen3.5-chat-template.jinja),
-        load-on-startup = false ;
+        load-on-startup = true (modèle par défaut) ;
   - ornith-1.5-9B / ministral-3-8B-Reasoning / gemma-4-E4B : template EMBARQUÉ
         (pas de chat-template-file) ;
   - tous : c = <contexte 32768>, n-gpu-layers = 99, load-on-startup ne précharge
-    que le modèle par défaut (ornith-1.5-9B) ;
+    que le modèle par défaut (qwen3.5-4B) ;
   - cmd routeur : --models-preset <ini> --models-max 1, pas de --model.
 """
 from __future__ import annotations
@@ -46,12 +46,12 @@ class PresetRouterTest(unittest.TestCase):
     def test_qwen354b_section_external_template(self) -> None:
         section = _section(server.render_preset(), "qwen3.5-4B")
         self.assertIn(f"chat-template-file = {config.external_template()}", section)
-        self.assertIn("load-on-startup = false", section)
+        self.assertIn("load-on-startup = true", section)  # modèle par défaut
 
     def test_ornith_15_9b_embedded_template(self) -> None:
         section = _section(server.render_preset(), "ornith-1.5-9B")
         self.assertNotIn("chat-template-file", section)
-        self.assertIn("load-on-startup = true", section)  # modèle par défaut
+        self.assertIn("load-on-startup = false", section)
 
     def test_ministral_3_8b_reasoning_embedded_template(self) -> None:
         section = _section(server.render_preset(), "ministral-3-8B-Reasoning")
@@ -61,7 +61,7 @@ class PresetRouterTest(unittest.TestCase):
     def test_gemma_4_e4b_embedded_template(self) -> None:
         section = _section(server.render_preset(), "gemma-4-E4B")
         self.assertNotIn("chat-template-file", section)
-        self.assertIn("load-on-startup = false", section)  # défaut = ornith
+        self.assertIn("load-on-startup = false", section)  # défaut = qwen3.5-4B
 
     def test_common_section_fields_all_models(self) -> None:
         for model in ("qwen3.5-4B", "ornith-1.5-9B", "ministral-3-8B-Reasoning", "gemma-4-E4B"):

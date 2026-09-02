@@ -49,8 +49,8 @@ AGENT_VERSION = "0.1.0"
 DEFAULT_MODEL = config.default_model()
 MODEL_FILE = ".tutor-model"
 
-# Anciennes clefs de profil (avant le renommage q8/ornith/ministral → …),
-# encore portées par des sessions persistées ou des sessionId antérieurs.
+# Anciennes clefs de profil (q8/ornith/ministral, d'avant le renommage en noms
+# longs), encore portées par des sessions persistées ou des sessionId antérieurs.
 _LEGACY_MODEL_KEYS = {
     "ministral": "ministral-3-8B-Reasoning",
     "ornith": "ornith-1.5-9B",
@@ -59,16 +59,20 @@ _LEGACY_MODEL_KEYS = {
 
 
 def _normalize_model(model: str) -> str:
-    """Mappe une clef de profil (actuelle ou historique) vers la clef actuelle.
+    """Mappe une clef de profil (actuelle ou historique) vers une clef active.
 
     Le moteur résout le profil via ``state["model"]``
     (``tutor.engine.complete_model_stream``) : une ancienne clef persistée
     (q8/ornith/ministral) doit être traduite au reload pour ne pas lever de
-    ``profile()`` KeyError.
+    ``profile()`` KeyError. Si la clef historique n'a plus de profil servi
+    (ex. ministral retirée du livrable), repli sur le modèle par défaut.
     """
     if model in config.profiles():
         return model
-    return _LEGACY_MODEL_KEYS.get(model, config.default_model())
+    mapped = _LEGACY_MODEL_KEYS.get(model)
+    if mapped in config.profiles():
+        return mapped
+    return config.default_model()
 
 
 def _model_for_session_id(session_id: str) -> str:
@@ -82,7 +86,7 @@ def _model_for_session_id(session_id: str) -> str:
             return key
     for legacy, key in _LEGACY_MODEL_KEYS.items():
         if session_id == legacy or session_id.startswith(legacy + "-"):
-            return key
+            return key if key in config.profiles() else config.default_model()
     return config.default_model()
 
 

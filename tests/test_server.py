@@ -5,7 +5,7 @@ sans jamais lancer de processus ni toucher au port :
   - [*] : jinja = true ; reasoning-preserve = true (global) ;
   - qwen3.5-4B : template EXTERNE (chat-template-file qwen3.5-chat-template.jinja),
         load-on-startup = true (modèle par défaut) ;
-  - ornith-1.5-9B / ministral-3-8B-Reasoning / gemma-4-E4B : template EMBARQUÉ
+  - ornith-1.5-9B / gemma-4-E4B : template EMBARQUÉ
         (pas de chat-template-file) ;
   - tous : c = <contexte 32768>, n-gpu-layers = 99, load-on-startup ne précharge
     que le modèle par défaut (qwen3.5-4B) ;
@@ -53,18 +53,13 @@ class PresetRouterTest(unittest.TestCase):
         self.assertNotIn("chat-template-file", section)
         self.assertIn("load-on-startup = false", section)
 
-    def test_ministral_3_8b_reasoning_embedded_template(self) -> None:
-        section = _section(server.render_preset(), "ministral-3-8B-Reasoning")
-        self.assertNotIn("chat-template-file", section)
-        self.assertIn("load-on-startup = false", section)
-
     def test_gemma_4_e4b_embedded_template(self) -> None:
         section = _section(server.render_preset(), "gemma-4-E4B")
         self.assertNotIn("chat-template-file", section)
         self.assertIn("load-on-startup = false", section)  # défaut = qwen3.5-4B
 
     def test_common_section_fields_all_models(self) -> None:
-        for model in ("qwen3.5-4B", "ornith-1.5-9B", "ministral-3-8B-Reasoning", "gemma-4-E4B"):
+        for model in ("qwen3.5-4B", "ornith-1.5-9B", "gemma-4-E4B"):
             with self.subTest(model=model):
                 section = _section(server.render_preset(), config.profile(model)["alias"])
                 self.assertIn(f"model = {config.model_path(model)}", section)
@@ -109,7 +104,7 @@ class EnsureRefreshTest(unittest.TestCase):
 
     def test_ensure_refreshes_stale_router(self) -> None:
         """Routeur géré qui ne sert que les ANCIENS alias → restart une fois."""
-        resp, stop, wait_free, start, mark = self._run(["ornith", "ministral", "q8"])
+        resp, stop, wait_free, start, mark = self._run(["ornith", "q8"])
         stop.assert_called_once()
         wait_free.assert_called_once()
         start.assert_called_once_with(wait_up_to=5.0)
@@ -130,11 +125,57 @@ class EnsureRefreshTest(unittest.TestCase):
     def test_ensure_restarts_on_any_current_alias_served(self) -> None:
         """Dès qu'UN alias actuel est servi, pas de restart (aucun redémarrage au
         switch alors qu'un autre modèle du preset est préchargé)."""
-        served = ["qwen3.5-4B"] + ["ornith", "ministral"]  # un seul alias courant
+        served = ["qwen3.5-4B"] + ["ornith", "q8"]  # un seul alias courant
         resp, stop, wait_free, start, _mark = self._run(served)
         stop.assert_not_called()
         start.assert_not_called()
         self.assertEqual(resp["status"], "ok")
+
+
+class EnsureFallbackTest(unittest.TestCase):
+    """ensure() : routeur local ABSENT → bascule sur le fallback distant si
+    configuré (`fallback.endpoint`) et joignable ; sinon démarrage local.
+
+    Cas couverts :
+      - fallback joignable → mode "fallback", `start` jamais appelé, flag engagé ;
+      - fallback injoignable → démarrage local (mode "local"), flag non engagé.
+    """
+
+    FB = "http://192.168.1.50:8080"
+
+    def _run(self, fb_ok: bool):
+        with (
+            mock.patch("tutor.config.fallback_endpoint", return_value=self.FB),
+            mock.patch("tutor.server.health_ok",
+                       side_effect=lambda base=None, timeout=2.0, api_key=None: bool(base) and fb_ok),
+            mock.patch("tutor.server.is_managed", return_value=False),
+            mock.patch("tutor.server._port_busy", return_value=False),
+            mock.patch("tutor.server.start",
+                       return_value={"status": "ok", "pid": 1, "logfile": "x",
+                                     "detail": "routeur démarré"}) as start,
+            mock.patch("tutor.server._mark_alias") as mark,
+            mock.patch("tutor.config.set_fallback_active") as set_fb,
+        ):
+            resp = server.ensure("ornith-1.5-9B", wait_up_to=5.0)
+        return resp, start, mark, set_fb
+
+    def test_fallback_engaged_when_local_absent_remote_ok(self) -> None:
+        resp, start, mark, set_fb = self._run(fb_ok=True)
+        start.assert_not_called()
+        mark.assert_called_once_with("ornith-1.5-9B")
+        self.assertEqual(resp["mode"], "fallback")
+        self.assertEqual(resp["status"], "ok")
+        self.assertIn("fallback distant", resp["detail"])
+        self.assertIn(self.FB, resp["detail"])
+        # reset (False) en début d'ensure puis engagement (True) : dernier état actif.
+        self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", True))
+
+    def test_ensure_starts_local_when_fallback_unreachable(self) -> None:
+        resp, start, _mark, set_fb = self._run(fb_ok=False)
+        start.assert_called_once_with(wait_up_to=5.0)
+        self.assertEqual(resp["mode"], "local")
+        # reset au début, pas d'engagement.
+        self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", False))
 
 
 if __name__ == "__main__":

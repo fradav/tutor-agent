@@ -2,7 +2,7 @@
 
 Chaque tour :
 1. reçoit le message étudiant (éventuellement embarqué avec les consignes tuteur
-   pour les profils sans système, cf. ministral-3-8B-Reasoning) ;
+   pour les profils en mode brut, cf. ``config.embeds_instructions``) ;
 2. passe les outils natifs (``grep_files`` / ``read_lines``, spec OpenAI ``tools``)
    au backend : c'est **le modèle** qui demande lui-même les lectures du corpus
    (mode outils standard, Option B) — l'engine exécute le vrai outil (lecture
@@ -10,11 +10,11 @@ Chaque tour :
    résultat en ``role:"tool"`` ;
 3. exécute éventuellement le code étudiant → bloc PYTHON-RUN ;
 4. construit les messages selon le profil (system + un user pour qwen3.5-4B /
-   ornith-1.5-9B ; tout fusionné en un seul user pour ministral-3-8B-Reasoning) ;
+   ornith-1.5-9B ; tout fusionné en un seul user pour un profil en mode brut) ;
 5. appelle le backend en **streaming** (``stream_complete``), boucle outillée
    (jusqu'à ``MAX_TOOL_ROUNDS`` appels si tool_calls), **retry si contenu vide** ;
-6. réinjecte le raisonnement multi-tours selon le profil (BRUT
-   ministral-3-8B-Reasoning / reasoning_content qwen3.5-4B-ornith-1.5-9B) ;
+6. réinjecte le raisonnement multi-tours selon le profil (BRUT pour un profil en
+   mode brut / reasoning_content pour qwen3.5-4B et ornith-1.5-9B) ;
 7. persiste état + transcript (même format que ``transcripts/*.json`` du
    Playground) et retourne le dict du tour.
 
@@ -22,7 +22,7 @@ Chaque tour :
 ∈ {"reasoning", "content"}) qui streame le raisonnement et le contenu au fil de
 l'eau ; le dict du tour est porté par ``StopIteration.value``. Le raisonnement
 est séparé du contenu chunk par chunk par un splitter
-(``BrutStreamSplitter`` [THINK]…[/THINK] pour ministral-3-8B-Reasoning,
+(``BrutStreamSplitter`` [THINK]…[/THINK] pour un profil en mode brut,
 ``QwenStreamSplitter`` `` thinking\n…\n response\n`` pour
 qwen3.5-4B/ornith-1.5-9B, ``GemmaStreamSplitter``
 ``<|channel>thought\n…<channel|>`` pour gemma-4-E4B) — un marqueur peut
@@ -50,7 +50,7 @@ from .tools import format_python, format_quote, grep_files, read_lines, run_pyth
 # au body gaspillerait énormément / risquerait le timeout sur les 3–9B locaux).
 CALL_MAX_TOKENS = max(1024, config.max_tokens() // 8)
 
-# Retry « contenu visible vide » (ministral-3-8B-Reasoning « pense sans
+# Retry « contenu visible vide » (un profil en mode brut « pense sans
 # répondre » : think émis mais [/THINK] non fermé → le splitter classe tout en
 # raisonnement). Le taux de fermeture est probabiliste (~40-60 % par essai,
 # instable dans le temps) ; le retry multiple fiabilise, puis la recovery
@@ -60,7 +60,7 @@ RETRY_ATTEMPTS = 3
 FALLBACK_RESPONSE = ("Je réfléchis à ta question — peux-tu la reformuler ou "
                      "préciser ce que tu cherches à faire ?")
 
-# Récupération « close-and-continue » (ministral-3-8B-Reasoning). Quand le
+# Récupération « close-and-continue » (profil en mode brut). Quand le
 # modèle a « pensé sans répondre » ([THINK] ouvert jamais fermé → réponse
 # englobée, invisible pour le splitter), on ferme le tag nous-mêmes, on
 # réinjecte le raisonnement, et on demande la réponse à l'étudiant. Testé 8/8
@@ -151,10 +151,9 @@ def _partial_suffix(buf: str, marker: str) -> str:
 
 
 def reinject_raw(reasoning: str, content: str) -> str:
-    """Ré-injection ministral-3-8B-Reasoning au format natif "[THINK]…[/THINK]" + réponse.
+    """Ré-injection d'un profil en mode brut au format natif "[THINK]…[/THINK]" + réponse.
 
-    Recommandation officielle Mistral (rejouer la trace complète, y compris le
-    ThinkChunk). Le modèle, voyant ses propres tags dans l'historique, continue
+    En mode brut, le modèle voit ses propres tags dans l'historique et continue
     de raisonner à chaque tour ; s'il ne ferme pas `[/THINK]`, la procédure
     close-and-continue (étape 5) récupère la réponse.
     """
@@ -534,6 +533,10 @@ class TutorEngine:
         ``tool_plan`` de la session) et n'émet jamais de ``tool_calls``."""
         prof = config.profile(self.state["model"])
         tools = TOOLS_SPEC if config.uses_native_tools(self.state["model"]) else None
+        # Endpoint/clef de secours quand `server.ensure` a basculé le modèle sur
+        # le fallback distant (routeur localhost injoignable).
+        api_key = (config.fallback_api_key()
+                   if config.is_fallback_active(self.state["model"]) else None)
         yield from stream_complete(
             messages,
             prof.get("alias", self.state["model"]),
@@ -542,6 +545,7 @@ class TutorEngine:
             sampling=prof["sampling"],
             reasoning_format="none",
             tools=tools,
+            api_key=api_key,
         )
 
     # -- mode Ask ----------------------------------------------------------
@@ -592,7 +596,7 @@ class TutorEngine:
         messages = state["messages"]
         first_turn = not state["turns"]
         if state.get("no_system_embed") and first_turn:
-            # ministral-3-8B-Reasoning : pas de système, les consignes vivent
+            # Profil en mode brut : pas de système, les consignes vivent
             # dans le premier message étudiant (sinon le [THINK]…[/THINK] du
             # template ne sort pas).
             student_user = ("[Consignes pour toi, le tuteur]\n"
@@ -626,9 +630,9 @@ class TutorEngine:
         #    est lu par le modèle lui-même (boucle outillée dans _stream_call) ;
         #    en mode Ask les QUOTE du plan sont injectés ici.
         if state.get("no_system_embed"):
-            # ministral-3-8B-Reasoning : alternance stricte user/assistant
-            # (raise_exception → 500 sur des user consécutifs) ; tout le contexte
-            # du tour (consignes, QUOTE Ask, PYTHON-RUN) est fusionné en un seul
+            # Profil en mode brut : alternance stricte user/assistant (sinon
+            # user consécutifs → HTTP 500) ; tout le contexte du tour
+            # (consignes, QUOTE Ask, PYTHON-RUN) est fusionné en un seul
             # message user.
             parts = [student_user]
             parts += quote_blocks
@@ -643,7 +647,7 @@ class TutorEngine:
                 messages.append({"role": "user", "content": py_block})
 
         # 5) appel STREAMÉ du modèle — sampling par profil, retry si contenu
-        # visible vide (ministral-3-8B-Reasoning « pense sans répondre » :
+        # visible vide (profil en mode brut « pense sans répondre » :
         # [/THINK] non fermé).
         # On streame au fil de l'eau : le raisonnement s'affiche avant/pendant le
         # contenu, sans attendre la fin de génération.
@@ -705,13 +709,12 @@ class TutorEngine:
 
         # 6) ré-injection multi-tours selon le profil.
         if state.get("no_system_embed"):
-            # ministral-3-8B-Reasoning : ré-injection au format natif
-            # [THINK]…[/THINK] (recommandé par la doc Mistral : rejouer la trace
-            # complète). Effet de bord connu : le modèle « rejoue » souvent le
-            # think de façon dégradée à T2+ (ouvre [THINK] sans le fermer) — la
-            # réponse est alors récupérée par la procédure close-and-continue de
-            # l'étape 5, et la trace reste enregistrée. On garde le format natif
-            # pour que le modèle raisonne à chaque tour.
+            # Profil en mode brut : ré-injection au format natif [THINK]…[/THINK]
+            # (rejouer la trace complète). Effet de bord connu : le modèle
+            # « rejoue » souvent le think de façon dégradée à T2+ (ouvre [THINK]
+            # sans le fermer) — la réponse est alors récupérée par la procédure
+            # close-and-continue de l'étape 5, et la trace reste enregistrée. On
+            # garde le format natif pour que le modèle raisonne à chaque tour.
             messages.append({"role": "assistant",
                              "content": reinject_raw(reasoning, content)})
         elif reasoning:
@@ -739,7 +742,7 @@ class TutorEngine:
 
         Le raisonnement natif (``reasoning_content``) arrive sur son propre
         canal ; il est aussi extrait du content chunk par chunk par un splitter
-        (``BrutStreamSplitter`` [THINK]…[/THINK] pour ministral-3-8B-Reasoning,
+        (``BrutStreamSplitter`` [THINK]…[/THINK] pour un profil en mode brut,
         ``QwenStreamSplitter`` ``<thinking>\n…\n</thinking>`` pour
         qwen3.5-4B / ornith-1.5-9B — **créé neuf à chaque
         ré-appel** : un splitter réutilisé repartirait en ``in_think`` à tort sur
@@ -805,7 +808,7 @@ class TutorEngine:
                 break
             # Le modèle veut lire le corpus : on exécute réellement l'outil et on
             # lui renvoie le résultat (alternance assistant(tool_calls)/tool
-            # strictement respectée — requise par ministral-3-8B-Reasoning, sans
+            # strictement respectée — requise par un profil en mode brut, sans
             # danger ailleurs).
             for tc in round_tool_calls:
                 fn = tc.get("function") or {}

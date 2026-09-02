@@ -87,7 +87,7 @@ def main() -> None:
     sub = parser.add_subparsers(dest="cmd", required=True)
 
     p_start = sub.add_parser("start", help="démarre/assure le serveur pour un modèle")
-    p_start.add_argument("model", help="qwen3.5-4B | ornith-1.5-9B | ministral-3-8B-Reasoning | gemma-4-E4B")
+    p_start.add_argument("model", help="qwen3.5-4B | ornith-1.5-9B | gemma-4-E4B")
     p_start.add_argument("--wait", type=float, default=180.0, help="délai d'attente (s)")
     p_start.set_defaults(func=_cmd_start)
 

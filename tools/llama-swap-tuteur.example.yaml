@@ -1,0 +1,67 @@
+# ---------------------------------------------------------------------------
+# llama-swap — exemples d'entrées pour le FALLBACK DISTANT du tuteur ACP
+# ---------------------------------------------------------------------------
+# À poser sur l'HÔTE qui servira les 3 modèles retenus (qwen3.5, ornith,
+# gemma4 — voir tools/download_gguf.sh ; ≠ poste local du tuteur),
+# par ex. `/etc/llama-swap/config.yaml`, puis lancer :
+#   GGUF_TUTORDIR=/chemin/vers/les/gguf \
+#   LLAMASWAP_API_KEY="$(printf 'sk-%s\n' "$(head -c 48 /dev/urandom | base64)")" \
+#   llama-swap --config config.yaml --listen 0.0.0.0:8080
+#
+# Côté tuteur (Tutor-agent/config.json), activer la bascule :
+#   "fallback": { "endpoint": "http://<hote>:8080", "api_key": "<même clef>" }
+# (endpoint vide par défaut → fallback désactivé : aucune régression locale.)
+#
+# Trois entrées :
+#   1) apiKeys  — clef exigée sur l'endpoint (Bearer / Basic / x-api-key).
+#   2) macros   — drapeaux llama-server communs aux 3 modèles (identiques au
+#                 routeur local 8025 : -c 32768 --jinja --reasoning-preserve).
+#   3) models   — les 3 modèles, clés = ALIAS des profils (le champ `model`
+#                 que le tuteur envoie). ${env.GGUF_TUTORDIR} = répertoire des
+#                 gguf (téléchargés là-bas via tools/download_gguf.sh).
+#
+# Le tuteur envoie déjà sampling + reasoning_format + tools par body → pas de
+# `filters.stripParams` ici (llama.cpp répond comme le routeur local, parsing
+# backend identique pour gemma `marker`).
+# ---------------------------------------------------------------------------
+
+# 1) Clef d'accès à l'endpoint (optionnel mais recommandé dès qu'on n'est pas
+#    en localhost). Une seule clef suffit ; la même doit finir dans
+#    config.json -> fallback.api_key. ${env.…} évite de la hardcoder ici.
+apiKeys:
+  - "${env.LLAMASWAP_API_KEY}"
+
+# Port de départ pour ${PORT} (chaque modèle écoute sur son propre port interne,
+# le front llama-swap route les requêtes sur --listen).
+startPort: 5800
+healthCheckTimeout: 300
+
+# 2) Macro commune : drapeaux identiques au routeur local (tutor/server.py).
+macros:
+  "llama-mps": >
+    llama-server --port ${PORT}
+    -c 32768 --jinja --reasoning-preserve -ngl 99
+
+# 3) Les 3 modèles — clés == alias des profils config.json.
+models:
+  "qwen3.5-4B":                       # alias du profil (valeur par défaut)
+    name: "Qwen3.5-4B"
+    description: "Tuteur par défaut — template Qwen3.5 externe requis"
+    cmd: |
+      ${llama-mps}
+      -m ${env.GGUF_TUTORDIR}/Qwen3.5-4B-UD-Q8_K_XL.gguf
+      --chat-template-file ${env.GGUF_TUTORDIR}/qwen3.5-chat-template.jinja
+
+  "ornith-1.5-9B":
+    name: "Ornith-1.5-9B"
+    description: "Template embarqué — pas de --chat-template-file"
+    cmd: |
+      ${llama-mps}
+      -m ${env.GGUF_TUTORDIR}/Ornith-1.5-9B-Q4_K_M.gguf
+
+  "gemma-4-E4B":
+    name: "gemma-4-E4B"
+    description: "Template embarqué"
+    cmd: |
+      ${llama-mps}
+      -m ${env.GGUF_TUTORDIR}/gemma-4-E4B_q4_0-it.gguf

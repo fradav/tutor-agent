@@ -55,23 +55,62 @@ def base_url() -> str:
     return f"http://{host}:{port}"
 
 
-def model_base_url(model: str) -> str:
-    """URL effective du backend d'un modèle : endpoint distant si le profil le
-    définit (clef ``endpoint`` non vide), sinon le serveur local de config.json.
-
-    Permet de servir un modèle via un llama-server hébergé ailleurs (machine
-    distante, SSH, clé USB montée chez l'élève…) sans rien changer au moteur.
-    """
-    endpoint = (profile(model).get("endpoint") or "").strip()
-    if endpoint:
-        return endpoint.rstrip("/")
-    return base_url()
-
-
 def is_remote(model: str) -> bool:
     """Le modèle est servi par un llama-server distant : il ne faut alors ni
     démarrer, ni redémarrer, ni arrêter de llama-server local pour lui (§4)."""
     return bool((profile(model).get("endpoint") or "").strip())
+
+
+def fallback_endpoint() -> str | None:
+    """Endpoint de secours quand le routeur localhost 8025 n'est pas joignable.
+
+    Où : `config.json` → `fallback.endpoint`, vide par défaut (fallback désactivé).
+    Peut être un hôte distant (<https://llm-serve.exemple.fr>) servi par
+    llama-swap/llama-server, distinct de `localhost:8025`.
+    """
+    return (_CONFIG.get("fallback", {}).get("endpoint") or "").strip() or None
+
+
+def fallback_api_key() -> str | None:
+    """Clef d'API pour le fallback distant (`fallback.api_key`), si l'endpoint
+    exige une authentification. `` → aucun header d'auth envoyé.
+
+    La clef circule uniquement (1) dans le header `Authorization: Bearer …` vers
+    le fallback, (2) dans un éventuel ping de disponibilité de `server.py::ensure`.
+    """
+    return (_CONFIG.get("fallback", {}).get("api_key") or "").strip() or None
+
+
+_fallback_engaged: set[str] = set()
+
+
+def set_fallback_active(model: str, active: bool) -> None:
+    """Marque (en mémoire) que `model` est actuellement desservi par le fallback
+    distant plutôt que par un llama-server local — pour que `backend_for` et
+    `model_base_url` routent vers `fallback.endpoint` pendant la session."""
+    (lambda: (_fallback_engaged.update([model]) if active else _fallback_engaged.discard(model)))()
+
+
+def is_fallback_active(model: str) -> bool:
+    return model in _fallback_engaged
+
+
+def model_base_url(model: str) -> str:
+    """Base URL de l'API OpenAI-compatible pour `model`.
+
+    Utilise dans l'ordre : l'endpoint du profil (`profiles.<m>.endpoint`), le
+    fallback distant (`fallback.endpoint`) si le modèle y est basculé par
+    `server.py::ensure` (routeur local injoignable), sinon le routeur local.
+    """
+    prof = profile(model)
+    endpoint = (prof.get("endpoint") or "").strip()
+    if endpoint:
+        return endpoint
+    if is_fallback_active(model):
+        fallback = fallback_endpoint()
+        if fallback:
+            return fallback
+    return base_url()
 
 
 def max_tokens() -> int:
@@ -161,10 +200,10 @@ def model_path(model: str) -> str:
 def build_system(model: str) -> str:
     """Système tuteur = variante ``tuteur-<model>.md`` + ``PREAMBLE.md``.
 
-    Pour ministral-3-8B-Reasoning (mode brut, aucun message système), le texte
-    renvoyé ici est embarqué dans le premier message étudiant (voir
-    engine.run_turn) ; pour qwen3.5-4B/ornith-1.5-9B/gemma-4-E4B il est posé
-    comme premier message ``role: system``.
+    Pour un profil en mode brut (``no_system_embed``, cf. ``embeds_instructions``),
+    le texte renvoyé ici est embarqué dans le premier message étudiant (voir
+    engine.run_turn) ; pour les autres profils il est posé comme premier
+    message ``role: system``.
     """
     prof = profile(model)
     variant = PROMPTS_DIR / prof["prompt"]
@@ -202,11 +241,11 @@ def is_gemma(model: str) -> bool:
 def embeds_instructions(model: str) -> bool:
     """Aucun message système : les consignes tuteur sont embarquées dans le
     premier message étudiant et tout le contexte du tour est fusionné en un seul
-    message user (alternance stricte user/assistant du template ministral).
+    message user (alternance stricte user/assistant).
 
-    Pour nos 4 profils, coïncide avec le mode brut (seul
-    ministral-3-8B-Reasoning est sans système ; gemma-4-E4B accepte un vrai
-    message système comme qwen3.5-4B/ornith-1.5-9B)."""
+    Coïncide avec le mode brut d'un profil (``mode: "brut"``, cf. ``is_brut``).
+    Les trois profils actuels (qwen3.5-4B, ornith-1.5-9B, gemma-4-E4B) acceptent
+    tous un vrai message système."""
     return is_brut(model)
 
 

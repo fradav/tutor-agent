@@ -11,7 +11,7 @@
 [project]
 name = "tuteur-acp"
 version = "0.1.0"
-description = "Agent ACP tuteur socratique pour Zed (3 modèles llama.cpp : qwen3.5-4B, ornith-1.5-9B, ministral-3-8B-Reasoning)"
+description = "Agent ACP tuteur socratique pour Zed (3 modèles llama.cpp : qwen3.5-4B, ornith-1.5-9B, gemma-4-E4B)"
 requires-python = ">=3.10"
 dependencies = [
     "agent-client-protocol>=0.12",

@@ -1,7 +1,8 @@
-# TODO — Agent ACP tuteur socratique (ministral-3-8B-Reasoning / qwen3.5-4B / ornith-1.5-9B / gemma-4-E4B)
+# TODO — Agent ACP tuteur socratique (qwen3.5-4B / ornith-1.5-9B / gemma-4-E4B)
 
 Agent qui se branche sur Zed via le protocole **ACP** (Agent Client Protocol) pour jouer le
-tuteur socratique MIASHS, en s'appuyant sur les 4 modèles retenus du plateau Small-Models.
+tuteur socratique MIASHS, en s'appuyant sur les 3 modèles retenus du plateau Small-Models
+(ministral-3-8B-Reasoning, étudiée puis retirée — cf. historique).
 L'infra est conçue pour le tutorat : légère, sans le system prompt lourd de zed-agent, avec
 un control fin du prompt, du sampling et du template de chat par modèle.
 
@@ -16,8 +17,15 @@ l'existant (harness du Playground) à reprendre ou à copier.
 
 ## 0. Contexte et décisions de cadrage
 
-- [ ] **Garder ministral-3-8B-Reasoning / qwen3.5-4B / ornith-1.5-9B / gemma-4-E4B** (parmi le plateau Small-Models) : laisser tomber
+> Ce qui suit est l'**historique de cadrage** (2026-2027). Ministral a depuis été
+> retirée du livrable (hallucination structurelle `run_after`, aucun gain mesuré
+> en rejeu — 02/09) : le livrable ne sert plus que qwen3.5-4B, ornith-1.5-9B et
+> gemma-4-E4B. Les décisions sur `[THINK]`/alternance stricte restent valables
+> comme documentation du cadrage technique.
+
+- [x] **Garder qwen3.5-4B / ornith-1.5-9B / gemma-4-E4B** (parmi le plateau Small-Models) : laisser tomber
       zed-agent comme base (system prompt déjà lourd, infra non adaptée au tutorat).
+      *(ministral-3-8B-Reasoning était dans la liste initiale — retirée du livrable, voir historique.)*
 - [ ] **Protocole ACP** (JSON-RPC 2.0 sur stdio, complémentaire de MCP) : Zed parle à notre
       agent, l'agent parle aux modèles via llama.cpp ; pas d'intermédiaire « éditeur →
       zed-agent » ni de prompt système d'éditeur imposé.
@@ -25,7 +33,7 @@ l'existant (harness du Playground) à reprendre ou à copier.
       *demo-ask-harness.py*) : outils lecture seule pré-exécutés par le backend, résultats
       réels injectés en blocs `QUOTE` neutres (jamais de syntaxe d'outil), ancrage
       fichier:ligne, anti-invention, exécution réelle du code étudiant en `PYTHON-RUN`.
-- [ ] **Piège central documenté dès le départ** : ministral-3-8B-Reasoning n'accepte aucun message système,
+- [x] **Piège central documenté dès le départ** *(historique — ministral retirée du livrable)* : ministral-3-8B-Reasoning n'accepte aucun message système,
       exige l'alternance stricte user/assistant (sinon HTTP 500) et raisonne en `[THINK]…[/THINK]`
       dans le `content` (mode BRUT). Toute l'architecture du moteur tuteur doit le supporter.
 - [x] **Workflow d'installation `uv`** (clone → `uv sync` → `uv run …`) : environnement géré par
@@ -157,7 +165,7 @@ l'existant (harness du Playground) à reprendre ou à copier.
 
 ---
 
-## 4. Backend modèles — 4 profils exacts
+## 4. Backend modèles — 4 profils exacts *(historique : 4 profils dont ministral — livrable final 3)*
 
 - [x] `tutor/llm.py` : réutiliser `complete()` de `harness.py` (endpoint
       `/v1/chat/completions`, champ `model` = alias de llama.cpp, `stream: False`,
@@ -200,7 +208,7 @@ l'existant (harness du Playground) à reprendre ou à copier.
 
 ---
 
-## 5. Switch entre les 4 modèles
+## 5. Switch entre les 4 modèles *(historique : 4 modèles dont ministral — livrable final 3)*
 
 - [x] **DÉCISION (utilisateur) : le fallback custom est retenu** (pas d'obstination sur
       `session/set_model`, absent du SDK agent-client-protocol 0.12). Le sélecteur repose sur le
@@ -431,7 +439,9 @@ avant le fix).
   du modèle, distincte du bug de raisonnement (voir `synthese-ministral.md`).
 - Sampling inchangé (0.7 / 0.95 / 40 / 0.05 / 0.0 / 1.1 — reco model card).
 
-## 8. Intégration gemma-4-E4B (4ᵉ modèle)
+## 8. Intégration gemma-4-E4B
+
+*(Abrégé « 4ᵉ modèle » dans l'historique : ce contexte comptait ministral ; le livrable final sert 3 modèles.)*
 
 - [x] **Décision template (utilisateur)** : garder le **template EMBARQUÉ** de
       gemma-4-E4B — pas de `chat_template_gemma4.jinja` externe. Avec

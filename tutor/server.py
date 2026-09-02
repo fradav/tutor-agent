@@ -1,7 +1,7 @@
 """Backend llama-server — mode ROUTEUR (§4/§5, décision encadrant).
 
 Un seul llama-server **routeur** sur le port dédié de ``config.json`` (section
-``server``), qui sert les 4 profils locaux sans kill/relance au switch du
+``server``), qui sert les 3 profils locaux sans kill/relance au switch du
 ``.tutor-model`` : la ligne de commande porte ``--models-preset`` (fichier INI
 généré depuis ``config.json``) et ``--models-max 1`` (un seul modèle chargé à la
 fois, déchargé/rechargé à la demande selon le champ ``model`` du body).
@@ -11,8 +11,6 @@ Le preset INI reproduit la règle du harnais par profil :
   [qwen3.5-4B]  model = <Qwen3.5-…Q8_K_XL.gguf> +
                 chat-template-file = qwen3.5-chat-template.jinja (EXTERNE)
   [ornith-1.5-9B]  model = <Ornith-…Q4_K_M.gguf>          (EMBARQUÉ)
-  [ministral-3-8B-Reasoning]
-                model = <Ministral-…Q4_K_M.gguf>          (EMBARQUÉ)
   [gemma-4-E4B]  model = <gemma-4-E4B_q4_0-it.gguf>       (EMBARQUÉ)
 Chaque section : ``c = <max_tokens>`` (32768), ``n-gpu-layers = 99``,
 ``load-on-startup = true`` pour le modèle par défaut seulement.
@@ -104,8 +102,8 @@ def render_preset() -> str:
 
     Le nom de section = **alias** (c'est ce que llama.cpp fait correspondre au
     champ ``model`` du body). ``chat-template-file`` n'est défini que pour
-    qwen3.5-4B (template externe) ; ornith-1.5-9B / ministral-3-8B-Reasoning /
-    gemma-4-E4B gardent le template embarqué du GGUF.
+    qwen3.5-4B (template externe) ; ornith-1.5-9B / gemma-4-E4B gardent le
+    template embarqué du GGUF.
     ``load-on-startup`` ne précharge que le modèle par défaut de config.json.
     """
     default = config.default_model()
@@ -176,16 +174,23 @@ def current_model() -> str | None:
         return None
 
 
-def health_ok(base_url: str | None = None, timeout: float = 2.0) -> bool:
+def health_ok(base_url: str | None = None, timeout: float = 2.0,
+              api_key: str | None = None) -> bool:
     """Le health check de llama.cpp répond 200 (modèle chargé et prêt).
 
     ``base_url`` par défaut = serveur local de config.json ; pour un profil
     distant, passer ``config.model_base_url(model)``. Le routeur répond 503
     pendant un chargement de modèle → ici ``False``.
+
+    ``api_key`` : passé en header ``Authorization: Bearer`` si le serveur ciblé
+    (ex. fallback llama-swap protégé par ``apiKeys:``) l'exige pour ``/health``.
     """
     base = base_url or config.base_url()
+    req = urllib.request.Request(base + "/health")
+    if api_key:
+        req.add_header("Authorization", f"Bearer {api_key}")
     try:
-        with urllib.request.urlopen(base + "/health", timeout=timeout) as r:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
             return r.status == 200
     except urllib.error.HTTPError:
         return False  # 503 → en cours de chargement → pas prêt
@@ -291,8 +296,16 @@ def ensure(model: str, wait_up_to: float = 180.0) -> dict:
           on attend, sans redémarrer ;
         * serveur NON géré qui ne sert aucun alias du preset → erreur explicite ;
         * pas de serveur → démarre le routeur une fois et attend la disponibilité.
+
+    **Fallback distant** : si aucun serveur ne répond sur ``localhost`` ET que
+    ``config.fallback_endpoint()`` est défini et joignable (endpoint non local,
+    ex. llama-swap distant), le modèle y est basculé pour la session
+    (``config.set_fallback_active``) — aucun ```start`` local, mode ``fallback``.
+    Le fallback ne prend jamais le pas sur un routeur local : il n'est consulté
+    que quand le local est injoignable.
     Lève ``ServerError`` sur tout cas bloquant (log en cas d'échec).
     """
+    config.set_fallback_active(model, False)
     alias = _alias(model)
     if config.is_remote(model):
         url = config.model_base_url(model)
@@ -319,6 +332,24 @@ def ensure(model: str, wait_up_to: float = 180.0) -> dict:
                 f"un serveur NON géré répond sur {config.base_url()} mais ne sert "
                 f"aucun alias du preset ({_preset_aliases()}). "
                 "Arrêtez-le manuellement, puis relancez `start <model>`.")
+        # Fallback distant : pas de serveur local, mais un endpoint de secours
+        # (non local) est configuré et joignable -> on bascule le modèle dessus
+        # sans rien démarrer ici. En cas d'échec, on retombe sur le démarrage
+        # local ci-dessous (voie par défaut inchangée).
+        fallback_url = config.fallback_endpoint()
+        if fallback_url and health_ok(
+            fallback_url,
+            timeout=3.0 if wait_up_to <= 15 else 8.0,
+            api_key=config.fallback_api_key(),
+        ):
+            config.set_fallback_active(model, True)
+            _mark_alias(model)
+            return {
+                "model": model, "alias": alias, "mode": "fallback",
+                "status": "ok",
+                "detail": "routeur local injoignable — bascule sur le fallback distant "
+                           + fallback_url + " pour cette session",
+            }
         if is_managed():
             # Notre routeur tourne mais charge un modèle (503) : attendre, sans
             # redémarrer (PAS de kill au switch).

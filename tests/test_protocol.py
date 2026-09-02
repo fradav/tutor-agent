@@ -92,17 +92,18 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
 
     async def test_new_session_model_from_file(self) -> None:
         with tempfile.TemporaryDirectory() as cwd:
-            Path(cwd, MODEL_FILE).write_text("ministral-3-8B-Reasoning\n", encoding="utf-8")
+            Path(cwd, MODEL_FILE).write_text("ornith-1.5-9B\n", encoding="utf-8")
             sid = await self._new_session(cwd)
-        self.assertTrue(sid.startswith("ministral-3-8B-Reasoning-"))
+        self.assertTrue(sid.startswith("ornith-1.5-9B-"))
 
     async def test_new_session_model_from_file_legacy_key(self) -> None:
-        """Fichier périmé (ancienne clef avant le renommage) → normalisée au
-        session/new (pas de « profil inconnu » si server.ensure était appelé)."""
+        """Fichier périmé portant une ancienne clef dont le profil n'existe plus
+        (ministral, retirée du livrable) → repli sur le défaut au session/new
+        (pas d'« Internal error » ni de profil inconnu)."""
         with tempfile.TemporaryDirectory() as cwd:
             Path(cwd, MODEL_FILE).write_text("ministral\n", encoding="utf-8")
             sid = await self._new_session(cwd)
-        self.assertTrue(sid.startswith("ministral-3-8B-Reasoning-"))
+        self.assertTrue(sid.startswith(f"{DEFAULT_MODEL}-"))
 
     async def test_new_session_default_model(self) -> None:
         with tempfile.TemporaryDirectory() as cwd:
@@ -150,8 +151,8 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opt.category, "model")
         self.assertEqual(opt.current_value, DEFAULT_MODEL)
         # Une entrée par profil de config.json (qwen3.5-4B, ornith-1.5-9B,
-        # ministral-3-8B-Reasoning, gemma-4-E4B).
-        self.assertEqual(len(opt.options), 4)
+        # gemma-4-E4B).
+        self.assertEqual(len(opt.options), 3)
         self.assertIn(DEFAULT_MODEL, {o.value for o in opt.options})
 
     async def test_load_session_replays_history(self) -> None:
@@ -212,13 +213,13 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
             with tempfile.TemporaryDirectory() as cwd:
                 with mock.patch("protocol.config.sessions_dir", return_value=store_path):
                     resp = await self.conn.load_session(
-                        session_id="ministral-Playground-empty-6", cwd=cwd)
+                        session_id="ornith-Playground-empty-6", cwd=cwd)
         opts = resp.config_options
         self.assertIsNotNone(opts)
-        self.assertEqual(opts[0].current_value, "ministral-3-8B-Reasoning")
-        session = self.agent._sessions.get("ministral-Playground-empty-6")
+        self.assertEqual(opts[0].current_value, "ornith-1.5-9B")
+        session = self.agent._sessions.get("ornith-Playground-empty-6")
         self.assertIsNotNone(session)
-        self.assertEqual(session["model"], "ministral-3-8B-Reasoning")
+        self.assertEqual(session["model"], "ornith-1.5-9B")
         self.assertEqual(session["state"]["turns"], [])
         self.assertEqual(session["messages"], [])
         # Aucun historique à rejouer : le client n'a rien reçu.
@@ -279,16 +280,16 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
             mock.patch("protocol.server.ensure", return_value={"detail": "ready (fake)"}) as fake_ensure,
         ):
             resp = await self.conn.set_config_option(
-                config_id="model", session_id=sid, value="ministral-3-8B-Reasoning")
+                config_id="model", session_id=sid, value="ornith-1.5-9B")
         # Le backend du nouveau modèle est préparé hors STUB.
-        fake_ensure.assert_called_once_with("ministral-3-8B-Reasoning")
+        fake_ensure.assert_called_once_with("ornith-1.5-9B")
         session = self.agent._sessions[sid]
-        self.assertEqual(session["model"], "ministral-3-8B-Reasoning")
-        self.assertEqual(session["state"]["model"], "ministral-3-8B-Reasoning")
+        self.assertEqual(session["model"], "ornith-1.5-9B")
+        self.assertEqual(session["state"]["model"], "ornith-1.5-9B")
         self.assertEqual(session["messages"], [])
         resp_opts = resp.config_options
         self.assertIsNotNone(resp_opts)
-        self.assertEqual(resp_opts[0].current_value, "ministral-3-8B-Reasoning")
+        self.assertEqual(resp_opts[0].current_value, "ornith-1.5-9B")
 
     async def test_set_config_option_unknown_config_or_model_raises(self) -> None:
         """Config inconnue, profil inconnu ou session inexistante → -32602."""

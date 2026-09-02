@@ -33,6 +33,7 @@ def stream_complete(
     sampling: dict | None = None,
     reasoning_format: str = "none",
     tools: list | None = None,
+    api_key: str | None = None,
 ) -> Iterator[tuple[str | None, str | None, str | None, dict | None, list | None]]:
     """Appel ``/v1/chat/completions`` STREAMÉ (SSE, line-delimited).
 
@@ -45,9 +46,8 @@ def stream_complete(
     `tools` : spec OpenAI des outils (``{"role":"tool",…}`` non, ``{"type":"function",…}``
     oui) — si non vide, ``body["tools"]`` + ``body["tool_choice"]="auto"``.
     `reasoning_format` : passé au body **même à "none"** — sans ce champ,
-    llama.cpp applique son extraction native du raisonnement pour
-    ministral-3-8B-Reasoning (le think part dans `reasoning_content`, absent du
-    content) et la trace
+    llama.cpp applique son extraction native du raisonnement (le think part dans
+    `reasoning_content`, absent du content) et la trace
     ne peut pas être ré-injectée multi-tours. "none" explicite force le flux
     complet (tags [THINK]…[/THINK] compris) dans `content`, où l'engine
     l'extrait. (reasoning_format=deepseek était abandonné : il avalait la
@@ -68,10 +68,15 @@ def stream_complete(
         body["tools"] = tools
         body["tool_choice"] = "auto"
     body.update(sampling)
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        # Endpoint distant protégé (ex. llama-swap `apiKeys:`) : clef en-tête
+        # Bearer. Jamais loggée ni incluse dans les payloads du tuteur.
+        headers["Authorization"] = f"Bearer {api_key}"
     req = urllib.request.Request(
         base_url + "/v1/chat/completions",
         data=json.dumps(body).encode(),
-        headers={"Content-Type": "application/json"},
+        headers=headers,
     )
     with urllib.request.urlopen(req, timeout=600) as r:
         finish: str | None = None
@@ -133,6 +138,7 @@ def complete(
     max_tokens: int,
     sampling: dict | None = None,
     reasoning_format: str = "none",
+    api_key: str | None = None,
 ) -> tuple[str, str, str, dict]:
     """Appel non streamé (drain de ``stream_complete``) — compatibilité.
 
@@ -143,7 +149,8 @@ def complete(
     finish = ""
     usage: dict = {}
     for dr, dc, fr, us, _tc in stream_complete(
-        messages, model, base_url, max_tokens, sampling, reasoning_format
+        messages, model, base_url, max_tokens, sampling, reasoning_format,
+        api_key=api_key,
     ):
         if dr:
             reasoning.append(dr)

@@ -12,20 +12,20 @@ lui demandez explicitement.
 Deux modalités de lecture du corpus, **par modèle** (clef
 `profiles.<modèle>.tools` de `config.json`) :
 
-- **outils natifs** (défaut de tous les profils sauf ministral) : le modèle
-  déclenche lui-même `grep_files` / `read_lines` (spec `tools` OpenAI) et
-  l'engine exécute la vraie lecture, lecture seule, résultats réels ;
+- **outils natifs** (défaut de tous les profils) : le modèle déclenche
+  lui-même `grep_files` / `read_lines` (spec `tools` OpenAI) et l'engine exécute
+  la vraie lecture, lecture seule, résultats réels ;
 - **Ask** (`"tools": "ask"`) : l'engine exécute un plan de lecture prédéfini et
   injecte les résultats dans le prompt en blocs QUOTE neutres — le modèle ne
-  voit jamais de syntaxe d'outil. Expérimental (testé sur ministral, sans gain).
+  voit jamais de syntaxe d'outil. Expérimental (testé puis écarté : aucun gain
+  significatif) — aucun profil ne l'utilise, le code reste disponible.
 
-Quatre modèles locaux (llama.cpp) :
+Trois modèles locaux (llama.cpp) :
 
 | Modèle | gguf | Template | Particularité |
 |--------|------|----------|----------------|
 | `qwen3.5-4B` | `Qwen3.5-4B-UD-Q8_K_XL.gguf` | externe (`qwen3.5-chat-template.jinja`) | **défaut** — léger, ancrage fiable |
 | `ornith-1.5-9B` | `Ornith-1.5-9B-Q4_K_M.gguf` | embarqué | longues sessions socratiques |
-| `ministral-3-8B-Reasoning` | `Ministral-3-8B-Reasoning-2512-Q4_K_M.gguf` | embarqué | **expérimental** (hallucine `run_after`), mode BRUT `[THINK]` |
 | `gemma-4-E4B` | `gemma-4-E4B_q4_0-it.gguf` | embarqué | option exactitude, à superviser |
 
 ---
@@ -38,7 +38,7 @@ Quatre modèles locaux (llama.cpp) :
 - `llama-server` (llama.cpp) — installé via Homebrew (`brew install llama.cpp`,
   **version stable ≥ 0.3.0** requise : c'est elle qui porte le **mode routeur**)
   ou un binaire précompilé présent dans le PATH.
-- ~22 Go libres au total (les 4 .gguf font ~4-6 Go chacun).
+- ~17 Go libres au total (les 3 .gguf font ~4-6 Go chacun).
 
 ## 2. Installation
 
@@ -49,7 +49,7 @@ cd /chemin/vers/Tutor-agent
 uv sync
 
 # 2. Télécharger les modèles (reprise `curl -L -C -` : relancer suffit)
-uv run python models/fetch_models.py        # les 4 .gguf → models/
+uv run python models/fetch_models.py        # les 3 .gguf → models/
 # options utiles :
 uv run python models/fetch_models.py --list # noms + tailles attendues
 uv run python models/fetch_models.py --only Qwen3.5-4B-UD-Q8_K_XL.gguf
@@ -86,7 +86,7 @@ agent dans le sélecteur d'agent.
 
 ## 4. Premier lancement
 
-Un **seul** llama-server (mode **routeur**) sert les 4 modèles sur le port
+Un **seul** llama-server (mode **routeur**) sert les 3 modèles sur le port
 8025 : il est lancé automatiquement par l'agent au besoin, en préchargeant le
 modèle par défaut (`qwen3.5-4B`). Pour vérifier/contrôler le backend à la main :
 
@@ -124,8 +124,7 @@ vous lancez Zed ne sert que de **défaut** lu au `session/new` (par défaut
 qwen3.5-4B
 ```
 
-Valeurs : `qwen3.5-4B`, `ornith-1.5-9B`, `ministral-3-8B-Reasoning`, `gemma-4-E4B`
-(ministral expérimental).
+Valeurs : `qwen3.5-4B`, `ornith-1.5-9B`, `gemma-4-E4B`.
 
 ### Sélecteur ACP (recommandé)
 
@@ -148,7 +147,6 @@ de discussion n'est pas reporté d'un modèle à l'autre).
 
 - Qwen3.5-4B — <https://huggingface.co/unsloth/Qwen3.5-4B-GGUF>
 - Ornith-1.5-9B — <https://huggingface.co/ornith-ai/Ornith-1.5-9B-GGUF>
-- Ministral-3-8B-Reasoning-2512 — <https://huggingface.co/mistralai/Ministral-3-8B-Reasoning-2512-GGUF>
 - Gemma-4-E4B (qat) — <https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf>
 
 ## 6. `config.json` — déjà réglé pour un usage autonome
@@ -180,6 +178,37 @@ Si vous placez les .gguf ailleurs, changez `paths.gguf_dir` (ou passez `--dest`
 à `fetch_models.py`) ; `llama-server` peut être remplacé par un chemin absolu
 vers un autre binaire.
 
+### Fallback distant (endpoint + clef API)
+
+En complément du routeur local, le harnais sait basculer sur un **endpoint
+distant** (machine de labo / autre poste) par profil ou en secours :
+
+- **`config.json → fallback`** : `endpoint` (ex. `http://<hote>:8080`) et
+  `api_key` (Bearer, optionnelle mais recommandée dès qu'on n'est plus en
+  localhost). `endpoint` vide (défaut livré) → fallback désactivé : usage
+  local inchangé. Un `endpoint` renseigné sous `profiles.<modèle>` prime sur
+  le fallback pour ce modèle.
+- **`tools/download_gguf.sh`** : télécharge les **3 gguf retenus** (qwen3.5,
+  ornith, gemma4) + le template Qwen3.5 via `uvx --from huggingface-hub hf
+  download`, dans `$GGUF_TUTORDIR` (défaut `models/`). Usage :
+  `GGUF_TUTORDIR=/chemin ./tools/download_gguf.sh` (tout) ou `… qwen3.5`
+  (un seul). gemma est gated (repo `google/…`) : exporter `HF_TOKEN`.
+- **`tools/llama-swap-tuteur.example.yaml`** : les **3 entrées** à poser dans
+  la config llama-swap de **l'hôte distant** (`/etc/llama-swap/config.yaml`),
+  avec `apiKeys` (une seule clef, la même que `fallback.api_key`), une macro
+  commune aux drapeaux du routeur local (`-c 32768 --jinja
+  --reasoning-preserve`) et `GGUF_TUTORDIR` comme répertoire des gguf :
+
+```bash
+GGUF_TUTORDIR=/chemin/vers/les/gguf \
+  LLAMASWAP_API_KEY="$(printf 'sk-%s\n' "$(head -c 48 /dev/urandom | base64)")" \
+  llama-swap --config /etc/llama-swap/config.yaml --listen 0.0.0.0:8080
+```
+
+  Le tuteur envoie déjà sampling + reasoning_format + tools par body (aucun
+  `filters.stripParams` nécessaire) ; seul `fallback.api_key` doit être le
+  reflet de `apiKeys` de l'hôte.
+
 ## 7. Tests
 
 ```bash
@@ -189,8 +218,12 @@ uv run python -m unittest tests/test_server.py -v
 # tests protocole (moteur en STUB) — aucun serveur ni corpus requis
 TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
 
-# tout-en-un (46 tests) — test_server pur, test_protocol en STUB, test_tools
-# couvre avec des vrais contenus (carte sections.json + serveur localhost sur corpus/www)
+# tests llm (auth fallback distant : endpoint + clef API, mock urlopen) — hors ligne
+uv run python -m unittest tests/test_llm.py -v
+
+# tout-en-un (50 tests) — test_server pur, test_protocol en STUB, test_tools
+# couvre avec des vrais contenus (carte sections.json + serveur localhost sur corpus/www),
+# test_llm hors ligne (mock urlopen)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 ```
 

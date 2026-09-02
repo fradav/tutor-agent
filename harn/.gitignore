@@ -1,9 +1,0 @@
-# harn local event DB (regenerated on every run; never commit)
-.harn/
-
-# Provider secrets/config should never live in the repo tree.
-# Copy providers.toml.dist to ~/.config/harn/providers.toml instead.
-providers.toml
-
-# Local scratch
-*.local

@@ -1,0 +1,269 @@
+// main.harn — generic ACP runner for `harn serve acp`.
+//
+// A fully-controlled ACP agent embedded in Zed:
+//   - 100% controlled system prompt (read from a markdown file, default
+//     `agent/instructions.md`), no agent_loop scaffolding injected;
+//   - read-only host tools scoped to $TUTOR_DOCROOT (read_file, read_file_tail,
+//     list_directory, get_file_outline, search_files, git_inspect);
+//   - optional local->remote provider fallback (fallback_chain);
+//   - configurable thinking / effort / temperature;
+//   - clickable local docs: `fichier:ligne` citations rewritten into
+//     `[fichier:ligne](BASE/html#slug)` links using a `sections.json` map.
+//
+// Everything is configured through environment variables (see README.md) so
+// this file stays generic and model-agnostic.
+
+import { agent_read_tools } from "std/agent/host_tools"
+import { agent_dispatch_tool_call } from "std/agent/primitives"
+import { env_str, env_int, env_float, env_bool, env_list } from "std/config"
+import { llm_caller } from "std/llm/caller"
+
+// ---------------------------------------------------------------------------
+// Citation -> link rewrite (port of tutor/docslinks.py)
+// ---------------------------------------------------------------------------
+
+/**
+ * Left boundary of a citation match must not be a "file-name character",
+ * otherwise we would rewrite in the middle of an identifier.
+ */
+fn is_boundary_char(ch: string) -> bool {
+  if ch == "" {
+    return false
+  }
+  return regex_match("[A-Za-z0-9_.\\-]", ch) != nil
+}
+
+/** Strip trailing "/" characters (harn has no rstrip on strings). */
+fn strip_trailing_slash(s: string) -> string {
+  let out = s
+  while out != "" && out.ends_with("/") {
+    out = out.substring(0, len(out) - 1)
+  }
+  return out
+}
+
+/** Returns BASE/chemin.html#slug for `fname:line`, or "" when unknown. */
+fn section_url_for(fname: string, line: int, base_url: string, sections: dict) -> string {
+  if base_url == "" || fname == "" {
+    return ""
+  }
+  const entry = sections[fname]
+  if entry == nil {
+    return ""
+  }
+  const html = to_string(entry?.html ?? (fname + ".html"))
+  const secs = entry?.sections ?? []
+  // No `lines` key in corpus sections.json: derive from `sections[].line` and
+  // pick the last section that starts at or before `line` (docslinks.py uses
+  // bisect_right over the sorted section lines).
+  let idx = -1
+  let i = 0
+  while i < len(secs) {
+    if to_int(secs[i]?.line ?? 0) <= line {
+      idx = i
+    }
+    i = i + 1
+  }
+  let url = strip_trailing_slash(base_url) + "/" + html
+  if idx >= 0 {
+    const slug = to_string(secs[idx]?.slug ?? "")
+    if slug != "" {
+      url = url + "#" + slug
+    }
+  }
+  return url
+}
+
+/**
+ * Deterministic whole-text rewrite: `name.qmd:N` (known file) -> markdown link.
+ * The Rust regex crate does not support look-around, so the left/right
+ * boundaries are checked manually on the surrounding characters.
+ */
+fn rewrite_citations(text: string, base_url: string, sections: dict) -> string {
+  if base_url == "" || text == "" {
+    return text
+  }
+  const matches = regex_captures("([A-Za-z0-9_][A-Za-z0-9_.\\-]*\\.qmd):(\\d+)", text) ?? []
+  if len(matches) == 0 {
+    return text
+  }
+  let out = ""
+  let cursor = 0
+  for m in matches {
+    const start = to_int(m?.start ?? 0)
+    const end = to_int(m?.end ?? 0)
+    if start < cursor {
+      continue
+    }
+    const before = substring(text, start - 1, start)
+    const after = substring(text, end, end + 1)
+    const lbad = is_boundary_char(before)          // char before start
+    const rbad = regex_match("[0-9]", after) != nil // char right after the digits
+    if !lbad && !rbad {
+      const groups = m?.groups ?? []
+      const fname = to_string(groups[0] ?? "")
+      const line = to_int(groups[1] ?? "0")
+      const url = section_url_for(fname, line, base_url, sections)
+      out = out + substring(text, cursor, start)
+      if url != "" {
+        out = out + "[" + substring(text, start, end) + "](" + url + ")"
+      } else {
+        out = out + substring(text, start, end)
+      }
+      cursor = end
+    }
+  }
+  out = out + substring(text, cursor, len(text))
+  return out
+}
+
+// ---------------------------------------------------------------------------
+// Manual tool loop
+// ---------------------------------------------------------------------------
+
+/**
+ * One model call at a time: emit answer text, and/or tool calls. Tool calls
+ * arrive normalized by harn in `result.value.tool_calls` (fallback
+ * `native_tool_calls`); the `text` channel is empty when a tool call is made.
+ * We never parse free text for tool calls (agent_parse_tool_calls fabricates
+ * bogus calls from prose).
+ */
+fn run_loop(caps: any, caller: any, system: string, first_user: string, tools: any, opts: dict, debug: bool) -> string {
+  let convo = first_user
+  let final_text = ""
+  let iter = 0
+  let done = false
+  while !done {
+    iter = iter + 1
+    if iter > 10 {
+      final_text = "The agent exceeded its tool-loop budget and stopped."
+      done = true
+      continue
+    }
+    const result = caller({ prompt: convo, system: system, opts: opts })
+    if result == nil {
+      caps.stdio.log("RUN_LOOP caller returned nil (provider/transport failure)")
+      final_text = "(The model backend is unavailable: the provider returned no response. Check the provider/model configuration.)"
+      done = true
+      continue
+    }
+    const text = to_string(result?.value?.text ?? "")
+    const calls = result?.value?.tool_calls ?? result?.value?.native_tool_calls ?? []
+    if debug {
+      caps.stdio.log("RUN_LOOP iter=" + to_string(iter) + " calls=" + to_string(len(calls)) + " text=" + text)
+    }
+    if len(calls) == 0 {
+      final_text = text
+      done = true
+      continue
+    }
+    // Keep any preamble the model wrote along with the tool call, then run.
+    convo = convo + "\n[assistant]\n" + text + "\n"
+    for c in calls {
+      const name = to_string(c?.name ?? c?.tool_name ?? "unknown")
+      let cargs = c?.arguments ?? {}
+      if type_of(cargs) == "string" {
+        cargs = try { json_parse(cargs) } catch (e) { {} }
+      }
+      const call = { id: to_string(c?.id ?? c?.tool_call_id ?? ("call_" + name)), name: name, arguments: cargs }
+      const disp = agent_dispatch_tool_call(caps.tools, call, tools, {})
+      const rr = to_string(disp?.rendered_result ?? disp?.error ?? "no result")
+      if debug {
+        caps.stdio.log("RUN_LOOP tool=" + name + " -> " + substring(rr, 0, 200))
+      }
+      convo = convo + "[tool " + name + "]\n" + rr + "\n"
+    }
+  }
+  return final_text
+}
+
+/** Thinking value: bool | "adaptive" | dict, typed as a union return. */
+fn thinking_value(t: string) {
+  if t == "on" { return true }
+  if t == "adaptive" { return "adaptive" }
+  if t == "dict" { return { max_thoughts: 5 } }
+  return false
+}
+
+// ---------------------------------------------------------------------------
+// ACP pipeline
+// ---------------------------------------------------------------------------
+
+pipeline main(harness: Harness) {
+  // --- configuration -------------------------------------------------------
+  const provider = env_str(harness.env, "TUTOR_PROVIDER") ?? "llamacpp"
+  const model = env_str(harness.env, "TUTOR_MODEL") ?? "qwen3.5-4B"
+  const docroot = env_str(harness.env, "TUTOR_DOCROOT") ?? "."
+  const sys_path = env_str(harness.env, "TUTOR_SYSTEM") ?? "agent/instructions.md"
+  const base_url = env_str(harness.env, "TUTOR_DOCS_BASE") ?? ""
+  const sections_path = env_str(harness.env, "TUTOR_SECTIONS") ?? ""
+  const tool_format = env_str(harness.env, "TUTOR_TOOL_FORMAT") ?? "json"
+  const thinking = env_str(harness.env, "TUTOR_THINKING") ?? "off"
+  const effort = env_str(harness.env, "TUTOR_EFFORT") ?? ""
+  const temperature = env_float(harness.env, "TUTOR_TEMPERATURE", 0.6)
+  const max_tokens = env_int(harness.env, "TUTOR_MAX_TOKENS", 2048)
+  const fallback_list = env_list(harness.env, "TUTOR_FALLBACK", ",")
+  const debug = env_bool(harness.env, "TUTOR_DEBUG", false)
+
+  // --- system prompt (fully controlled, from file) ------------------------
+  let system = try { harness.fs.read_text(sys_path) } catch (e) { "" }
+  if system == "" {
+    system = "You are a helpful assistant. Answer concisely.\n"
+  }
+
+  // --- read-only tools, scoped to the doc root ----------------------------
+  const tools = agent_read_tools(harness.fs, harness.tools, nil, { root: docroot, cwd: docroot })
+
+  // --- sections map for citation->link rewriting --------------------------
+  let sections = {}
+  if sections_path != "" {
+    sections = try { json_parse(harness.fs.read_text(sections_path)) } catch (e) { {} }
+  }
+
+  // --- flatten the incoming prompt ----------------------------------------
+  let user = ""
+  const blocks = try { prompt_content } catch (e) { [] }
+  for b in blocks {
+    const bt = to_string(b?.text ?? "")
+    if bt != "" {
+      user = user + "[== turn ==]\n" + bt + "\n"
+    }
+  }
+  if user == "" {
+    user = to_string(try { prompt } catch (e) { "" })
+  }
+  if user == "" {
+    user = "(no prompt)"
+  }
+
+  // --- llm options (all flat — pick_keys drops nested/unknown keys) -------
+  let opts = {
+    provider: provider,
+    model: model,
+    tools: tools,
+    tool_format: tool_format,
+    temperature: temperature,
+    max_tokens: max_tokens,
+  }
+  opts = opts + { thinking: thinking_value(thinking) }
+  if effort != "" {
+    opts = opts + { effort: effort }
+  }
+  if len(fallback_list) > 0 {
+    opts = opts + { fallback_chain: fallback_list }
+  }
+
+  if debug {
+    harness.stdio.log("RUN_CFG provider=" + provider + " model=" + model + " docroot=" + docroot)
+    harness.stdio.log("RUN_CFG sys=" + sys_path + " base=" + base_url + " sections=" + sections_path)
+    harness.stdio.log("RUN_CFG format=" + tool_format + " thinking=" + thinking + " fallback=" + to_string(fallback_list))
+  }
+
+  const caller = llm_caller(harness)
+  const final_text = run_loop({ stdio: harness.stdio, tools: harness.tools }, caller, system, user, tools, opts, debug)
+
+  // --- rewrite citations into clickable docs links, then emit -------------
+  const visible = rewrite_citations(final_text, base_url, sections)
+  harness.runtime.emit_response({ text: visible })
+  return { stopReason: "end_turn" }
+}

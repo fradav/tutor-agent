@@ -1,0 +1,8 @@
+[package]
+name = "acp-doc-helper"
+version = "0.1.0"
+description = "Generic read-only ACP runner for local small models with clickable documentation anchors."
+license = "MIT"
+
+[workspace]
+pipelines = ["main.harn"]

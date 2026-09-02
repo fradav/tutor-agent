@@ -1,0 +1,612 @@
+{
+ "ai-tutor.qmd": {
+  "html": "ai-tutor.html",
+  "sections": [
+   {
+    "line": 8,
+    "slug": "why-configure-the-tutor",
+    "title": "Why configure the tutor?"
+   },
+   {
+    "line": 31,
+    "slug": "the-anatomy-of-a-system-prompt",
+    "title": "The anatomy of a *system prompt*"
+   },
+   {
+    "line": 64,
+    "slug": "where-the-tutor-lives-in-practice-your-local-agents.md",
+    "title": "Where the tutor lives in practice: your local `AGENTS.md`"
+   },
+   {
+    "line": 79,
+    "slug": "the-iteration-process",
+    "title": "The iteration process"
+   },
+   {
+    "line": 100,
+    "slug": "detecting-a-false-or-harmful-answer",
+    "title": "Detecting a false (or harmful) answer"
+   },
+   {
+    "line": 110,
+    "slug": "typical-exercise-block-2",
+    "title": "Typical exercise (block 2)"
+   },
+   {
+    "line": 123,
+    "slug": "self-assessment-grid-for-a-prompt",
+    "title": "Self-assessment grid for a prompt"
+   },
+   {
+    "line": 132,
+    "slug": "further-reading",
+    "title": "Further reading"
+   }
+  ]
+ },
+ "appendix-agent-tips.qmd": {
+  "html": "appendix-agent-tips.html",
+  "sections": [
+   {
+    "line": 8,
+    "slug": "configure-a-global-agents.md-to-avoid-context-bombs",
+    "title": "Configure a global `AGENTS.md` to avoid context bombs"
+   },
+   {
+    "line": 65,
+    "slug": "ask-with-bounds",
+    "title": "Ask with bounds"
+   },
+   {
+    "line": 72,
+    "slug": "start-a-fresh-context-per-problem",
+    "title": "Start a fresh context per problem"
+   }
+  ]
+ },
+ "appendix-llm-docs.qmd": {
+  "html": "appendix-llm-docs.html",
+  "sections": [
+   {
+    "line": 17,
+    "slug": "llm-project.zip-the-previous-course-llm-ready",
+    "title": "llm-project.zip — the previous course, LLM-ready"
+   },
+   {
+    "line": 38,
+    "slug": "python-doc.zip-official-python-3.12-library-docs",
+    "title": "python-doc.zip — official Python 3.12 library docs"
+   }
+  ]
+ },
+ "appendix-local-llm.qmd": {
+  "html": "appendix-local-llm.html",
+  "sections": [
+   {
+    "line": 13,
+    "slug": "what-the-key-contains",
+    "title": "What the key contains"
+   },
+   {
+    "line": 44,
+    "slug": "copy-the-folder-first",
+    "title": "Copy the folder first"
+   },
+   {
+    "line": 51,
+    "slug": "starting-the-server",
+    "title": "Starting the server"
+   },
+   {
+    "line": 53,
+    "slug": "macos",
+    "title": "macOS"
+   },
+   {
+    "line": 67,
+    "slug": "windows",
+    "title": "Windows"
+   },
+   {
+    "line": 81,
+    "slug": "verifying-that-it-runs",
+    "title": "Verifying that it runs"
+   },
+   {
+    "line": 92,
+    "slug": "tuning-the-server",
+    "title": "Tuning the server"
+   },
+   {
+    "line": 103,
+    "slug": "gpu-offload--ngl-999",
+    "title": "GPU offload: `-ngl 999`"
+   },
+   {
+    "line": 110,
+    "slug": "moe-offload-for-low-vram---n-cpu-moe",
+    "title": "MoE offload for low VRAM: `--n-cpu-moe`"
+   },
+   {
+    "line": 128,
+    "slug": "context-size--c",
+    "title": "Context size: `-c`"
+   },
+   {
+    "line": 135,
+    "slug": "connecting-the-server-to-zed",
+    "title": "Connecting the server to Zed"
+   }
+  ]
+ },
+ "appendix-slides.qmd": {
+  "html": "appendix-slides.html",
+  "sections": [
+   {
+    "line": 8,
+    "slug": "session-1-module-setup-track-choice-ai-policy",
+    "title": "Session 1 — module setup, track choice, AI policy"
+   },
+   {
+    "line": 16,
+    "slug": "session-2-designing-an-ai-tutor-principles-demo",
+    "title": "Session 2 — designing an AI tutor: principles & demo"
+   },
+   {
+    "line": 26,
+    "slug": "session-3-designing-an-ai-tutor-the-prompt-workshop",
+    "title": "Session 3 — designing an AI tutor: the prompt workshop"
+   }
+  ]
+ },
+ "learning-plan.qmd": {
+  "html": "learning-plan.html",
+  "sections": [
+   {
+    "line": 6,
+    "slug": "why-a-plan",
+    "title": "Why a plan?"
+   },
+   {
+    "line": 13,
+    "slug": "what-the-plan-must-contain",
+    "title": "What the plan must contain"
+   },
+   {
+    "line": 15,
+    "slug": "objectives-per-technical-module",
+    "title": "1. Objectives (per technical module)"
+   },
+   {
+    "line": 26,
+    "slug": "sequencing",
+    "title": "2. Sequencing"
+   },
+   {
+    "line": 32,
+    "slug": "success-criteria-and-evidence",
+    "title": "3. Success criteria and evidence"
+   },
+   {
+    "line": 40,
+    "slug": "follow-up-schedule",
+    "title": "4. Follow-up schedule"
+   },
+   {
+    "line": 46,
+    "slug": "contract",
+    "title": "5. Contract"
+   },
+   {
+    "line": 52,
+    "slug": "plan-template",
+    "title": "Plan template"
+   },
+   {
+    "line": 89,
+    "slug": "validation-flow-session-5",
+    "title": "Validation flow (session 5)"
+   },
+   {
+    "line": 97,
+    "slug": "classic-mistakes-to-avoid",
+    "title": "Classic mistakes to avoid"
+   }
+  ]
+ },
+ "prerequisites.qmd": {
+  "html": "prerequisites.html",
+  "sections": [
+   {
+    "line": 8,
+    "slug": "editor-zed",
+    "title": "Editor: Zed"
+   },
+   {
+    "line": 32,
+    "slug": "python-environment-management-with-uv",
+    "title": "Python environment management with `uv`"
+   },
+   {
+    "line": 51,
+    "slug": "track-a-tooling-an-ai-tutor",
+    "title": "Track A tooling: an AI tutor"
+   },
+   {
+    "line": 79,
+    "slug": "option-1-openrouter-api-recommended",
+    "title": "Option 1 — OpenRouter API (recommended)"
+   },
+   {
+    "line": 87,
+    "slug": "set-up-the-key-in-zed",
+    "title": "Set up the key in Zed"
+   },
+   {
+    "line": 104,
+    "slug": "free-limits-and-when-they-change",
+    "title": "Free limits and when they change"
+   },
+   {
+    "line": 132,
+    "slug": "option-2-mistral-api-free-key",
+    "title": "Option 2 — Mistral API (free key)"
+   },
+   {
+    "line": 140,
+    "slug": "set-up-the-key-in-zed-1",
+    "title": "Set up the key in Zed"
+   },
+   {
+    "line": 153,
+    "slug": "free-plan-limits-and-data-policy",
+    "title": "Free plan limits and data policy"
+   },
+   {
+    "line": 166,
+    "slug": "option-3-local-model-if-your-machine-allows-it",
+    "title": "Option 3 — Local model (if your machine allows it)"
+   },
+   {
+    "line": 196,
+    "slug": "option-4-other-free-api-offers",
+    "title": "Option 4 — Other free API offers"
+   },
+   {
+    "line": 232,
+    "slug": "option-5-a-web-chatbot-as-is-no-api-key",
+    "title": "Option 5 — A web chatbot, as-is (no API key)"
+   },
+   {
+    "line": 255,
+    "slug": "troubleshooting-mistrals-reasoning-thinking-does-not-show",
+    "title": "Troubleshooting: Mistral's reasoning (\"thinking\") does not show"
+   },
+   {
+    "line": 328,
+    "slug": "collaborative-editing",
+    "title": "Collaborative editing"
+   },
+   {
+    "line": 334,
+    "slug": "running-multiprocessingasyncio-in-jupyter",
+    "title": "Running `multiprocessing`/`asyncio` in Jupyter"
+   }
+  ]
+ },
+ "projects.qmd": {
+  "html": "projects.html",
+  "sections": [
+   {
+    "line": 11,
+    "slug": "framework",
+    "title": "Framework"
+   },
+   {
+    "line": 20,
+    "slug": "proposed-topics",
+    "title": "Proposed topics"
+   },
+   {
+    "line": 25,
+    "slug": "parallel-etl-pipeline",
+    "title": "1. Parallel ETL pipeline"
+   },
+   {
+    "line": 39,
+    "slug": "olap-analysis-multidimensional-aggregation",
+    "title": "2. OLAP analysis / multidimensional aggregation"
+   },
+   {
+    "line": 49,
+    "slug": "document-retrieval-agent-deep-research",
+    "title": "3. Document retrieval agent (deep research)"
+   },
+   {
+    "line": 60,
+    "slug": "stream-processing",
+    "title": "4. Stream processing"
+   },
+   {
+    "line": 71,
+    "slug": "minimal-specification",
+    "title": "Minimal specification"
+   },
+   {
+    "line": 82,
+    "slug": "grading-rubric-overall-weight-30",
+    "title": "Grading rubric (overall weight: 30%)"
+   },
+   {
+    "line": 94,
+    "slug": "defense-s11-1811-13301530",
+    "title": "Defense (S11, 18/11, 13:30–15:30)"
+   },
+   {
+    "line": 101,
+    "slug": "frequently-asked-questions",
+    "title": "Frequently asked questions"
+   }
+  ]
+ },
+ "references.qmd": {
+  "html": "references.html",
+  "sections": [
+   {
+    "line": 6,
+    "slug": "why-this-design-theoretical-framework",
+    "title": "Why this design: theoretical framework"
+   },
+   {
+    "line": 27,
+    "slug": "documented-limits-of-ai-in-education",
+    "title": "Documented limits of AI in education"
+   },
+   {
+    "line": 44,
+    "slug": "official-technical-resources",
+    "title": "Official technical resources"
+   },
+   {
+    "line": 62,
+    "slug": "further-references",
+    "title": "Further references"
+   }
+  ]
+ },
+ "summary.qmd": {
+  "html": "summary.html",
+  "sections": [
+   {
+    "line": 9,
+    "slug": "the-thread-parallelism-is-not-free",
+    "title": "The thread: parallelism is not free"
+   },
+   {
+    "line": 17,
+    "slug": "map-of-the-6-modules",
+    "title": "Map of the 6 modules"
+   },
+   {
+    "line": 29,
+    "slug": "cross-cutting-watch-points",
+    "title": "Cross-cutting watch points"
+   },
+   {
+    "line": 40,
+    "slug": "indicative-deadlines",
+    "title": "Indicative deadlines"
+   },
+   {
+    "line": 51,
+    "slug": "where-to-start",
+    "title": "Where to start"
+   }
+  ]
+ },
+ "teaching-design.qmd": {
+  "html": "teaching-design.html",
+  "sections": [
+   {
+    "line": 6,
+    "slug": "the-general-idea",
+    "title": "The general idea"
+   },
+   {
+    "line": 22,
+    "slug": "two-tracks-identical-objectives",
+    "title": "Two tracks, identical objectives"
+   },
+   {
+    "line": 26,
+    "slug": "track-a-socratic-ai-tutor",
+    "title": "Track A: Socratic AI tutor"
+   },
+   {
+    "line": 35,
+    "slug": "track-b-classic-learning",
+    "title": "Track B: classic learning"
+   },
+   {
+    "line": 43,
+    "slug": "switching-tracks",
+    "title": "Switching tracks"
+   },
+   {
+    "line": 52,
+    "slug": "reciprocal-observation",
+    "title": "Reciprocal observation"
+   },
+   {
+    "line": 71,
+    "slug": "working-modes",
+    "title": "Working modes"
+   },
+   {
+    "line": 76,
+    "slug": "solo-work",
+    "title": "Solo work"
+   },
+   {
+    "line": 83,
+    "slug": "pair-work",
+    "title": "Pair work"
+   },
+   {
+    "line": 91,
+    "slug": "speaking-up-in-group",
+    "title": "Speaking up in group"
+   },
+   {
+    "line": 106,
+    "slug": "board-work",
+    "title": "Board work"
+   },
+   {
+    "line": 119,
+    "slug": "signals-and-think-time",
+    "title": "Signals and think time"
+   },
+   {
+    "line": 125,
+    "slug": "semester-timeline-course-plan",
+    "title": "Semester timeline (course plan)"
+   },
+   {
+    "line": 142,
+    "slug": "assessment",
+    "title": "Assessment"
+   },
+   {
+    "line": 154,
+    "slug": "the-safeguards-why-they-are-there",
+    "title": "The safeguards (why they are there)"
+   },
+   {
+    "line": 162,
+    "slug": "ai-use-policy",
+    "title": "AI use policy"
+   },
+   {
+    "line": 178,
+    "slug": "to-go-further",
+    "title": "To go further"
+   }
+  ]
+ },
+ "00_intro-parallelism.qmd": {
+  "html": "Courses/00_intro-parallelism.html",
+  "sections": [
+   {
+    "line": 11,
+    "slug": "notions-to-master",
+    "title": "Notions to master"
+   },
+   {
+    "line": 22,
+    "slug": "structuring-questions",
+    "title": "Structuring questions"
+   },
+   {
+    "line": 36,
+    "slug": "laws-and-taxonomy",
+    "title": "Laws and taxonomy"
+   },
+   {
+    "line": 51,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "01_asynchronous.qmd": {
+  "html": "Courses/01_asynchronous.html",
+  "sections": [
+   {
+    "line": 15,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 28,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "02_ipc-locks.qmd": {
+  "html": "Courses/02_ipc-locks.html",
+  "sections": [
+   {
+    "line": 16,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 28,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "03_distributed.qmd": {
+  "html": "Courses/03_distributed.html",
+  "sections": [
+   {
+    "line": 21,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 41,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "04_simd.qmd": {
+  "html": "Courses/04_simd.html",
+  "sections": [
+   {
+    "line": 19,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 38,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "05_gpu.qmd": {
+  "html": "Courses/05_gpu.html",
+  "sections": [
+   {
+    "line": 19,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 42,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ },
+ "06_webgpu.qmd": {
+  "html": "Courses/06_webgpu.html",
+  "sections": [
+   {
+    "line": 17,
+    "slug": "key-points",
+    "title": "Key points"
+   },
+   {
+    "line": 35,
+    "slug": "exercises",
+    "title": "Exercises"
+   }
+  ]
+ }
+}

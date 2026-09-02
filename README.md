@@ -189,7 +189,8 @@ uv run python -m unittest tests/test_server.py -v
 # tests protocole (moteur en STUB) — aucun serveur ni corpus requis
 TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
 
-# tout-en-un (29 tests) — test_server est pur (sans serveur), test_protocol en STUB
+# tout-en-un (46 tests) — test_server pur, test_protocol en STUB, test_tools
+# couvre avec des vrais contenus (carte sections.json + serveur localhost sur corpus/www)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 ```
 
@@ -197,7 +198,41 @@ Le mode routeur est documenté par llama.cpp (`tools/server/README.md`, § Using
 multiple models). Le preset généré est traçable dans `servers/models-router.ini`
 (une section par alias, régénéré à chaque `start`).
 
-## 8. Pourquoi un agent ACP ? (et pourquoi pas « Zed + Ask + prompt effacé »)
+## 8. Citations cliquables vers une doc locale
+
+Pour que les citations du modèle soient consultables, l'engine réécrit les
+références `fichier.qmd:ligne` qu'il voit sortir du modèle en **liens HTTP
+cliquables** vers une copie locale du book rendu :
+
+- **Serveur statique** (`uv run python run.py serve-docs`, auto-démarré par
+  `acp_agent.py`) : sert `corpus/www/` — copie du `docs/` rendu du book
+  (<https://fradav.github.io/miashs-2026-2027-advanced-programming/>), HTML +
+  `site_libs/` + `images/` + `search.json`, port 8765 (`config.json` → `docs`).
+- **Réécriture déterministe** côté engine (`tutor/docslinks.py`) : dans le message
+  visible sortant (jamais dans le contexte envoyé au modèle),
+  `Cours/x.qmd:ligne` → `[Cours/x.qmd:ligne](http://127.0.0.1:8765/Courses/x.html#ancre)`.
+  Présent en outils natifs comme en mode Ask, aucun changement de prompt.
+- **Carte ligne → section** (`corpus/sections.json`, générée par
+  `tools/build_docs_map.py` depuis les `.qmd` + les ancres réelles du HTML rendu) :
+  ligne hors section → lien vers la page sans `#` ; fichier inconnu → pas de lien.
+
+Re-synchroniser le cache (le book est rendu dans
+`Cours-programmation-MIASHS-2026/docs/`) :
+
+```bash
+rsync -a --delete --exclude slides/ --exclude downloads/ \
+  ../Cours-programmation-MIASHS-2026/docs/ corpus/www/
+uv run python tools/build_docs_map.py
+```
+
+Exclusions par défaut : `slides/` (lourd) et `downloads/`, et volontairement
+**aucune solution** (risque de fuite de corrigé dans le contexte du modèle).
+
+Limites connues : le clic sur le lien dans la conversation Zed dépend du rendu
+markdown de Zed (à valider en pratique) ; la doc Python officielle
+(`MIASHS-2026/python-doc/`) n'a pas ce rendu HTML cliquable.
+
+## 9. Pourquoi un agent ACP ? (et pourquoi pas « Zed + Ask + prompt effacé »)
 
 **Peut-on simplement effacer le prompt système de Zed ?** Pour un **modèle**
 déclaré dans *LLM Providers* et utilisé par l'agent Zed intégré : **non**. Zed

@@ -1,0 +1,1069 @@
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" lang="en" xml:lang="en"><head>
+
+<meta charset="utf-8">
+<meta name="generator" content="quarto-1.10.18">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+
+
+<title>5&nbsp; Socratic Prompting: Techniques That Turn Any Modern LLM into a Tutor – Advanced Programming and Parallel Computing</title>
+<style>
+/* Default styles provided by pandoc.
+** See https://pandoc.org/MANUAL.html#variables-for-html for config info.
+*/
+span.smallcaps{font-variant: small-caps;}
+div.columns{display: flex; gap: 1.5em;}
+div.column{flex: auto;}
+@media screen {
+div.columns{gap: min(4vw, 1.5em);}
+div.column{overflow-x: auto;}
+}
+div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+ul.task-list{list-style: none;}
+ul.task-list li input[type="checkbox"] {
+  width: 0.8em;
+  margin: 0 0.8em 0.2em -1em; /* quarto-specific, see https://github.com/quarto-dev/quarto-cli/issues/4556 */ 
+  vertical-align: middle;
+}
+/* CSS for citations */
+div.csl-bib-body { }
+div.csl-entry {
+  clear: both;
+  margin-bottom: 0em;
+}
+.hanging-indent div.csl-entry {
+  margin-left:2em;
+  text-indent:-2em;
+}
+div.csl-left-margin {
+  min-width:2em;
+  float:left;
+}
+div.csl-right-inline {
+  margin-left:2em;
+  padding-left:1em;
+}
+div.csl-indent {
+  margin-left: 2em;
+}</style>
+
+
+<script src="site_libs/quarto-nav/quarto-nav.js"></script>
+<script src="site_libs/quarto-nav/headroom.min.js"></script>
+<script src="site_libs/clipboard/clipboard.min.js"></script>
+<script src="site_libs/quarto-search/autocomplete.umd.js"></script>
+<script src="site_libs/quarto-search/fuse.min.js"></script>
+<script src="site_libs/quarto-search/quarto-search.js"></script>
+<meta name="quarto:offset" content="./">
+<link href="./learning-plan.html" rel="next">
+<link href="./ai-tutor.html" rel="prev">
+<script src="site_libs/quarto-html/quarto.js" type="module"></script>
+<script src="site_libs/quarto-html/tabsets/tabsets.js" type="module"></script>
+<script src="site_libs/quarto-html/popper.min.js"></script>
+<script src="site_libs/quarto-html/tippy.umd.min.js"></script>
+<script src="site_libs/quarto-html/anchor.min.js"></script>
+<link href="site_libs/quarto-html/tippy.css" rel="stylesheet">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-64a204ab8560d761af7679ceaba22944.css" rel="stylesheet" class="quarto-color-scheme" id="quarto-text-highlighting-styles">
+<link href="site_libs/quarto-html/quarto-syntax-highlighting-dark-b85bc7c33db8c58e0ec93c3465666fed.css" rel="stylesheet" class="quarto-color-scheme quarto-color-alternate" id="quarto-text-highlighting-styles">
+<script src="site_libs/bootstrap/bootstrap.min.js"></script>
+<link href="site_libs/bootstrap/bootstrap-icons.css" rel="stylesheet">
+<link href="site_libs/bootstrap/bootstrap-af28502ac8d036ed35c2b305f0f54fbb.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme" id="quarto-bootstrap" data-mode="light">
+<link href="site_libs/bootstrap/bootstrap-dark-3bbd6a9bbbe52288d7dadd4871a2e2aa.min.css" rel="stylesheet" append-hash="true" class="quarto-color-scheme quarto-color-alternate" id="quarto-bootstrap" data-mode="dark">
+<script id="quarto-search-options" type="application/json">{
+  "location": "sidebar",
+  "copy-button": false,
+  "collapse-after": 3,
+  "panel-placement": "start",
+  "type": "textbox",
+  "limit": 50,
+  "keyboard-shortcut": [
+    "f",
+    "/",
+    "s"
+  ],
+  "show-item-context": false,
+  "language": {
+    "search-no-results-text": "No results",
+    "search-matching-documents-text": "matching documents",
+    "search-copy-link-title": "Copy link to search",
+    "search-hide-matches-text": "Hide additional matches",
+    "search-more-match-text": "more match in this document",
+    "search-more-matches-text": "more matches in this document",
+    "search-clear-button-title": "Clear",
+    "search-text-placeholder": "",
+    "search-detached-cancel-button-title": "Cancel",
+    "search-submit-button-title": "Submit",
+    "search-label": "Search"
+  }
+}</script>
+
+
+</head>
+
+<body class="nav-sidebar floating quarto-dark"><script id="quarto-html-before-body" type="application/javascript">
+    const toggleBodyColorMode = (bsSheetEl) => {
+      const mode = bsSheetEl.getAttribute("data-mode");
+      const bodyEl = window.document.querySelector("body");
+      if (mode === "dark") {
+        bodyEl.classList.add("quarto-dark");
+        bodyEl.classList.remove("quarto-light");
+      } else {
+        bodyEl.classList.add("quarto-light");
+        bodyEl.classList.remove("quarto-dark");
+      }
+    }
+    const toggleBodyColorPrimary = () => {
+      const bsSheetEl = window.document.querySelector("link#quarto-bootstrap:not([rel=disabled-stylesheet])");
+      if (bsSheetEl) {
+        toggleBodyColorMode(bsSheetEl);
+      }
+    }
+    const setColorSchemeToggle = (alternate) => {
+      const toggles = window.document.querySelectorAll('.quarto-color-scheme-toggle');
+      for (let i=0; i < toggles.length; i++) {
+        const toggle = toggles[i];
+        if (toggle) {
+          if (alternate) {
+            toggle.classList.add("alternate");
+          } else {
+            toggle.classList.remove("alternate");
+          }
+        }
+      }
+    };
+    const toggleColorMode = (alternate) => {
+      // Switch the stylesheets
+      const primaryStylesheets = window.document.querySelectorAll('link.quarto-color-scheme:not(.quarto-color-alternate)');
+      const alternateStylesheets = window.document.querySelectorAll('link.quarto-color-scheme.quarto-color-alternate');
+      manageTransitions('#quarto-margin-sidebar .nav-link', false);
+      if (alternate) {
+        // note: dark is layered on light, we don't disable primary!
+        enableStylesheet(alternateStylesheets);
+        for (const sheetNode of alternateStylesheets) {
+          if (sheetNode.id === "quarto-bootstrap") {
+            toggleBodyColorMode(sheetNode);
+          }
+        }
+      } else {
+        disableStylesheet(alternateStylesheets);
+        enableStylesheet(primaryStylesheets)
+        toggleBodyColorPrimary();
+      }
+      manageTransitions('#quarto-margin-sidebar .nav-link', true);
+      // Switch the toggles
+      setColorSchemeToggle(alternate)
+      // Hack to workaround the fact that safari doesn't
+      // properly recolor the scrollbar when toggling (#1455)
+      if (navigator.userAgent.indexOf('Safari') > 0 && navigator.userAgent.indexOf('Chrome') == -1) {
+        manageTransitions("body", false);
+        window.scrollTo(0, 1);
+        setTimeout(() => {
+          window.scrollTo(0, 0);
+          manageTransitions("body", true);
+        }, 40);
+      }
+    }
+    const disableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        stylesheet.rel = 'disabled-stylesheet';
+      }
+    }
+    const enableStylesheet = (stylesheets) => {
+      for (let i=0; i < stylesheets.length; i++) {
+        const stylesheet = stylesheets[i];
+        if(stylesheet.rel !== 'stylesheet') { // for Chrome, which will still FOUC without this check
+          stylesheet.rel = 'stylesheet';
+        }
+      }
+    }
+    const manageTransitions = (selector, allowTransitions) => {
+      const els = window.document.querySelectorAll(selector);
+      for (let i=0; i < els.length; i++) {
+        const el = els[i];
+        if (allowTransitions) {
+          el.classList.remove('notransition');
+        } else {
+          el.classList.add('notransition');
+        }
+      }
+    }
+    const isFileUrl = () => {
+      return window.location.protocol === 'file:';
+    }
+    const hasAlternateSentinel = () => {
+      let styleSentinel = getColorSchemeSentinel();
+      if (styleSentinel !== null) {
+        return styleSentinel === "alternate";
+      } else {
+        return false;
+      }
+    }
+    const setStyleSentinel = (alternate) => {
+      const value = alternate ? "alternate" : "default";
+      if (!isFileUrl()) {
+        window.localStorage.setItem("quarto-color-scheme", value);
+      } else {
+        localAlternateSentinel = value;
+      }
+    }
+    const getColorSchemeSentinel = () => {
+      if (!isFileUrl()) {
+        const storageValue = window.localStorage.getItem("quarto-color-scheme");
+        return storageValue != null ? storageValue : localAlternateSentinel;
+      } else {
+        return localAlternateSentinel;
+      }
+    }
+    const toggleGiscusIfUsed = (isAlternate, darkModeDefault) => {
+      const baseTheme = document.querySelector('#giscus-base-theme')?.value ?? 'light';
+      const alternateTheme = document.querySelector('#giscus-alt-theme')?.value ?? 'dark';
+      let newTheme = '';
+      if(authorPrefersDark) {
+        newTheme = isAlternate ? baseTheme : alternateTheme;
+      } else {
+        newTheme = isAlternate ? alternateTheme : baseTheme;
+      }
+      const changeGiscusTheme = () => {
+        // From: https://github.com/giscus/giscus/issues/336
+        const sendMessage = (message) => {
+          const iframe = document.querySelector('iframe.giscus-frame');
+          if (!iframe) return;
+          iframe.contentWindow.postMessage({ giscus: message }, 'https://giscus.app');
+        }
+        sendMessage({
+          setConfig: {
+            theme: newTheme
+          }
+        });
+      }
+      const isGiscussLoaded = window.document.querySelector('iframe.giscus-frame') !== null;
+      if (isGiscussLoaded) {
+        changeGiscusTheme();
+      }
+    };
+    const authorPrefersDark = true;
+    const queryPrefersDark = window.matchMedia('(prefers-color-scheme: dark)');
+    const darkModeDefault = queryPrefersDark.matches;
+    let localAlternateSentinel = darkModeDefault ? 'alternate' : 'default';
+    // Dark / light mode switch
+    window.quartoToggleColorScheme = () => {
+      // Read the current dark / light value
+      let toAlternate = !hasAlternateSentinel();
+      toggleColorMode(toAlternate);
+      setStyleSentinel(toAlternate);
+      toggleGiscusIfUsed(toAlternate, darkModeDefault);
+      window.dispatchEvent(new Event('resize'));
+    };
+    queryPrefersDark.addEventListener("change", e => {
+      if(window.localStorage.getItem("quarto-color-scheme") !== null)
+        return;
+      const alternate = e.matches
+      toggleColorMode(alternate);
+      localAlternateSentinel = e.matches ? 'alternate' : 'default'; // this is used alongside local storage!
+      toggleGiscusIfUsed(alternate, darkModeDefault);
+    });
+    // Switch to dark mode if need be
+    if (hasAlternateSentinel()) {
+      toggleColorMode(true);
+    } else {
+      toggleColorMode(false);
+    }
+  </script>
+
+<div id="quarto-search-results"></div>
+  <header id="quarto-header" class="headroom fixed-top">
+  <nav class="quarto-secondary-nav">
+    <div class="container-fluid d-flex">
+      <button type="button" class="quarto-btn-toggle btn" data-bs-toggle="collapse" role="button" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">
+        <i class="bi bi-layout-text-sidebar-reverse"></i>
+      </button>
+        <nav class="quarto-page-breadcrumbs" aria-label="breadcrumb"><ol class="breadcrumb"><li class="breadcrumb-item"><a href="./socratic-prompting.html"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Socratic Prompting: Techniques That Turn Any Modern LLM into a Tutor</span></a></li></ol></nav>
+        <a class="flex-grow-1" role="navigation" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item" aria-controls="quarto-sidebar" aria-expanded="false" aria-label="Toggle sidebar navigation" onclick="if (window.quartoToggleHeadroom) { window.quartoToggleHeadroom(); }">      
+        </a>
+      <button type="button" class="btn quarto-search-button" aria-label="Search" onclick="window.quartoOpenSearch();">
+        <i class="bi bi-search"></i>
+      </button>
+    </div>
+  </nav>
+</header>
+<!-- content -->
+<div id="quarto-content" class="quarto-container page-columns page-rows-contents page-layout-article">
+<!-- sidebar -->
+  <nav id="quarto-sidebar" class="sidebar collapse collapse-horizontal quarto-sidebar-collapse-item sidebar-navigation floating overflow-auto">
+    <div class="pt-lg-2 mt-2 text-left sidebar-header">
+    <div class="sidebar-title mb-0 py-0">
+      <a href="./">Advanced Programming and Parallel Computing</a> 
+        <div class="sidebar-tools-main">
+  <a href="" class="quarto-color-scheme-toggle quarto-navigation-tool  px-1" onclick="window.quartoToggleColorScheme(); return false;" title="Toggle dark mode"><i class="bi"></i></a>
+</div>
+    </div>
+      </div>
+        <div class="mt-2 flex-shrink-0 align-items-center">
+        <div class="sidebar-search">
+        <div id="quarto-search" class="" title="Search"></div>
+        </div>
+        </div>
+    <div class="sidebar-menu-container"> 
+    <ul class="list-unstyled mt-1">
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./index.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">1</span>&nbsp; <span class="chapter-title">Preface</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./prerequisites.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">2</span>&nbsp; <span class="chapter-title">Prerequisites</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./teaching-design.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">3</span>&nbsp; <span class="chapter-title">The pedagogical design</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./ai-tutor.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Designing an AI tutor</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./socratic-prompting.html" class="sidebar-item-text sidebar-link active">
+ <span class="menu-text"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Socratic Prompting: Techniques That Turn Any Modern LLM into a Tutor</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./learning-plan.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Planning your learning</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/00_intro-parallelism.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">7</span>&nbsp; <span class="chapter-title">Introduction to Parallelism</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/01_asynchronous.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">8</span>&nbsp; <span class="chapter-title">Module 1 — Asynchronous and Concurrency</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/02_ipc-locks.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">9</span>&nbsp; <span class="chapter-title">Module 2 — IPC &amp; Locks</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/03_distributed.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">10</span>&nbsp; <span class="chapter-title">Module 3 — Distributed Computing</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/04_simd.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">11</span>&nbsp; <span class="chapter-title">Module 4 — SIMD and Vectorization</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/05_gpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">12</span>&nbsp; <span class="chapter-title">Module 5 — GPU</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./Courses/06_webgpu.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">13</span>&nbsp; <span class="chapter-title">Module 6 — WebGPU</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./projects.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">14</span>&nbsp; <span class="chapter-title">Final project</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./summary.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">15</span>&nbsp; <span class="chapter-title">Module summary</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./references.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">16</span>&nbsp; <span class="chapter-title">References</span></span></a>
+  </div>
+</li>
+        <li class="sidebar-item sidebar-item-section">
+      <div class="sidebar-item-container"> 
+            <a class="sidebar-item-text sidebar-link text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true">
+ <span class="menu-text">Appendices</span></a>
+          <a class="sidebar-item-toggle text-start" data-bs-toggle="collapse" data-bs-target="#quarto-sidebar-section-1" role="navigation" aria-expanded="true" aria-label="Toggle section">
+            <i class="bi bi-chevron-right ms-2"></i>
+          </a> 
+      </div>
+      <ul id="quarto-sidebar-section-1" class="collapse list-unstyled sidebar-section depth1 show">  
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./appendix-local-llm.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">A</span>&nbsp; <span class="chapter-title">Running the local model from the USB key</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./appendix-slides.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">B</span>&nbsp; <span class="chapter-title">Slides</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./appendix-llm-docs.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">C</span>&nbsp; <span class="chapter-title">Local documentation packs for the AI tutor</span></span></a>
+  </div>
+</li>
+          <li class="sidebar-item">
+  <div class="sidebar-item-container"> 
+  <a href="./appendix-agent-tips.html" class="sidebar-item-text sidebar-link">
+ <span class="menu-text"><span class="chapter-number">D</span>&nbsp; <span class="chapter-title">Tips and tricks for agent use</span></span></a>
+  </div>
+</li>
+      </ul>
+  </li>
+    </ul>
+    </div>
+</nav>
+<div id="quarto-sidebar-glass" class="quarto-sidebar-collapse-item" data-bs-toggle="collapse" data-bs-target=".quarto-sidebar-collapse-item"></div>
+<!-- margin-sidebar -->
+    <div id="quarto-margin-sidebar" class="sidebar margin-sidebar">
+        <nav id="TOC" role="doc-toc" class="toc-active">
+    <h2 id="toc-title">Table of contents</h2>
+   
+  <ul>
+  <li><a href="#background-why-prompt-instead-of-fine-tune" id="toc-background-why-prompt-instead-of-fine-tune" class="nav-link active" data-scroll-target="#background-why-prompt-instead-of-fine-tune"><span class="header-section-number">6</span> Background: why prompt instead of fine-tune?</a></li>
+  <li><a href="#activate-the-tutor-persona-in-the-system-prompt" id="toc-activate-the-tutor-persona-in-the-system-prompt" class="nav-link" data-scroll-target="#activate-the-tutor-persona-in-the-system-prompt"><span class="header-section-number">7</span> 1. Activate the tutor persona in the system prompt</a></li>
+  <li><a href="#guard-against-answer-leakage-hint-never-solve" id="toc-guard-against-answer-leakage-hint-never-solve" class="nav-link" data-scroll-target="#guard-against-answer-leakage-hint-never-solve"><span class="header-section-number">8</span> 2. Guard against answer leakage: “hint, never solve”</a></li>
+  <li><a href="#scaffold-reasoning-along-pólyas-problem-solving-phases" id="toc-scaffold-reasoning-along-pólyas-problem-solving-phases" class="nav-link" data-scroll-target="#scaffold-reasoning-along-pólyas-problem-solving-phases"><span class="header-section-number">9</span> 3. Scaffold reasoning along Pólya’s problem-solving phases</a></li>
+  <li><a href="#optimize-the-prompt-itself-instead-of-the-weights" id="toc-optimize-the-prompt-itself-instead-of-the-weights" class="nav-link" data-scroll-target="#optimize-the-prompt-itself-instead-of-the-weights"><span class="header-section-number">10</span> 4. Optimize the prompt itself instead of the weights</a></li>
+  <li><a href="#prime-with-real-tutor-dialogue-as-few-shot-exemplars" id="toc-prime-with-real-tutor-dialogue-as-few-shot-exemplars" class="nav-link" data-scroll-target="#prime-with-real-tutor-dialogue-as-few-shot-exemplars"><span class="header-section-number">11</span> 5. Prime with real tutor dialogue as few-shot exemplars</a></li>
+  <li><a href="#close-the-loop-with-a-leak-detecting-judge" id="toc-close-the-loop-with-a-leak-detecting-judge" class="nav-link" data-scroll-target="#close-the-loop-with-a-leak-detecting-judge"><span class="header-section-number">12</span> 6. Close the loop with a leak-detecting judge</a></li>
+  <li><a href="#put-it-together-a-minimal-working-template" id="toc-put-it-together-a-minimal-working-template" class="nav-link" data-scroll-target="#put-it-together-a-minimal-working-template"><span class="header-section-number">13</span> Put it together: a minimal working template</a></li>
+  </ul>
+</nav>
+    </div>
+<!-- main -->
+<main class="content" id="quarto-document-content">
+
+
+<header id="title-block-header" class="quarto-title-block default">
+<div class="quarto-title">
+<h1 class="title"><span class="chapter-number">5</span>&nbsp; <span class="chapter-title">Socratic Prompting: Techniques That Turn Any Modern LLM into a Tutor</span></h1>
+</div>
+
+
+
+<div class="quarto-title-meta">
+
+    
+  
+    
+  </div>
+  
+
+
+</header>
+
+
+<section id="background-why-prompt-instead-of-fine-tune" class="level1" data-number="6">
+<h1 data-number="6"><span class="header-section-number">6</span> Background: why prompt instead of fine-tune?</h1>
+<p>The Hugging Face landscape of Socratic and mentor-role language models is dominated by fine-tunes of the Qwen2.5 generation, for instance the LoRA-tuned <code>RuudFontys/socratic-tutor-qwen2.5</code> <span class="citation" data-cites="ruudfontys2025socratictutor"><a href="#ref-ruudfontys2025socratictutor" role="doc-biblioref">[1]</a></span>. Base models that old are no longer competitive with today’s general-purpose models, including the smaller local ones used in classrooms. Before paying the cost of downloading, serving, and maintaining a dedicated fine-tune, it is worth asking whether the same tutor behavior is reachable by prompting a current model.</p>
+<p>The evidence so far says yes, and the gap is measurable.</p>
+<ul>
+<li>A training-free system-prompt optimization on a general model reached an aggregate tutoring reward of 0.719, above the 0.633 of the RL-trained tutor fine-tunes it was compared against (numbers as reported by the authors) <span class="citation" data-cites="lee2026tutors"><a href="#ref-lee2026tutors" role="doc-biblioref">[2]</a></span>.</li>
+<li>Adding a careful scaffold to GPT-4o raised its MathTutorBench score from 0.50 to 0.82 without any fine-tuning <span class="citation" data-cites="macina2025mathtutorbench"><a href="#ref-macina2025mathtutorbench" role="doc-biblioref">[3]</a></span>.</li>
+<li>In a pre-registered RCT with roughly 1,000 high-school students, a guided GPT-4o tutor produced a 127% assisted-learning gain with no penalty to unassisted learning, while the same base model used without guidance left students 17% worse off than the control group <span class="citation" data-cites="bastani2024generative"><a href="#ref-bastani2024generative" role="doc-biblioref">[4]</a></span>.</li>
+</ul>
+<p>Two observations explain why prompting can match dedicated models. First, asking questions instead of answering is an in-context capability of a strong base model, so a good system prompt unlocks it. The creator of one tutor fine-tune admits as much: the model’s card ships with a custom system prompt and states that the Socratic behavior depends on it <span class="citation" data-cites="ruudfontys2025socratictutor"><a href="#ref-ruudfontys2025socratictutor" role="doc-biblioref">[1]</a></span>. Second, the main failure mode of tutor-role models is answer leakage: trained to be helpful, they hand over the solution, which actively harms learning <span class="citation" data-cites="dinucujianu2025tutorrl"><a href="#ref-dinucujianu2025tutorrl" role="doc-biblioref">[5]</a></span>. That failure is better addressed with explicit guardrails in the prompt than by more training.</p>
+<p>The rest of this page catalogues the prompting techniques that showed up again and again in the research, explains what each does, and gives working examples.</p>
+</section>
+<section id="activate-the-tutor-persona-in-the-system-prompt" class="level1" data-number="7">
+<h1 data-number="7"><span class="header-section-number">7</span> 1. Activate the tutor persona in the system prompt</h1>
+<p><strong>What it is.</strong> Write an explicit role into the system prompt: the model is a Socratic tutor whose job is to guide, not to deliver. For a fine-tuned model this persona prompt is what actually switches on the trained behavior; for a general model it does the same job from scratch.</p>
+<p><strong>Why it works.</strong> The SocraticLM card ships paired “solver” and “Socratic” system prompts for identical weights, making the persona a pure prompting toggle (Hugging Face model card). The RuudFontys fine-tune behaves as a tutor only when its system prompt is present <span class="citation" data-cites="ruudfontys2025socratictutor"><a href="#ref-ruudfontys2025socratictutor" role="doc-biblioref">[1]</a></span>. MathTutorBench similarly found that a described tutor scaffold changes what even GPT-4o produces <span class="citation" data-cites="macina2025mathtutorbench"><a href="#ref-macina2025mathtutorbench" role="doc-biblioref">[3]</a></span>. The persona prompt is the cheapest intervention and the base everything else builds on.</p>
+<p><strong>Example (reconstructed from the RuudFontys model card).</strong> The card’s system prompt has three parts: a role declaration, a list of working principles, and a closing restatement of the goal.</p>
+<pre><code>You are a Socratic tutor. Your purpose is to help the learner reach the
+answer themselves through guided questioning. To do this:
+
+- Ask thought-provoking questions that stimulate the learner's thinking.
+- Avoid giving direct explanations unless the learner explicitly asks.
+- Build on the learner's own responses with follow-up questions.
+- Encourage step-by-step reasoning rather than leaps to the result.
+- Foster curiosity so the learner wants to solve problems on their own.
+
+Remember: your goal is to make the learner capable of solving problems
+independently, not to deliver the solution yourself.</code></pre>
+<p>The same structure transfers to any current model: declare the role, list two or three behavioral rules, close with the goal statement <span class="citation" data-cites="ruudfontys2025socratictutor"><a href="#ref-ruudfontys2025socratictutor" role="doc-biblioref">[1]</a></span>.</p>
+</section>
+<section id="guard-against-answer-leakage-hint-never-solve" class="level1" data-number="8">
+<h1 data-number="8"><span class="header-section-number">8</span> 2. Guard against answer leakage: “hint, never solve”</h1>
+<p><strong>What it is.</strong> A short, explicit block of instructions that forbids revealing the answer and forces every response to move the learner forward with a hint or a smaller question.</p>
+<p><strong>Why it works.</strong> Leakage is the dominant failure of tutor-role models. TutorRL reports that trained tutor policies give away the answer in roughly 50 to 75% of responses across the models they tested, because being “helpful” is what the underlying optimization rewarded <span class="citation" data-cites="dinucujianu2025tutorrl"><a href="#ref-dinucujianu2025tutorrl" role="doc-biblioref">[5]</a></span>. The cleanest demonstration of the guardrail’s value is the Bastani RCT: the same underlying GPT-4o, wrapped in a tutor system that refuses direct answers, produced a 127% assisted gain, while the bare “GPT Base” condition (no guardrails) was 17% worse than a plain textbook group <span class="citation" data-cites="bastani2024generative"><a href="#ref-bastani2024generative" role="doc-biblioref">[4]</a></span>. MathTutorBench’s scaffold likewise credits the no-answer rule for much of the 0.50 to 0.82 jump <span class="citation" data-cites="macina2025mathtutorbench"><a href="#ref-macina2025mathtutorbench" role="doc-biblioref">[3]</a></span>.</p>
+<p><strong>Example.</strong></p>
+<pre><code>Ground rules for this tutoring session:
+- Never present the final answer. If the learner asks for it, respond with
+  a hint or a smaller sub-question.
+- Each reply must contain at least one question that advances the learner.
+- If you are about to write the numeric result or the full derivation,
+  stop and reformulate it as a next step the learner can take.</code></pre>
+</section>
+<section id="scaffold-reasoning-along-pólyas-problem-solving-phases" class="level1" data-number="9">
+<h1 data-number="9"><span class="header-section-number">9</span> 3. Scaffold reasoning along Pólya’s problem-solving phases</h1>
+<p><strong>What it is.</strong> Structure the conversation around the phases of mathematical problem solving popularized by Pólya: understand the problem, devise a plan, carry it out, and look back <span class="citation" data-cites="polya1945howtosolveit"><a href="#ref-polya1945howtosolveit" role="doc-biblioref">[6]</a></span>. The prompt tells the model which phase it is in and what kind of question belongs there.</p>
+<p><strong>Why it works.</strong> The scaffold gives the model a curriculum for each turn instead of leaving it to improvise. Rather than dump a generic “what do you think?” loop, the model asks phase-appropriate questions: clarifying what is given, recalling analogous problems, verifying each step, and checking the result. This is the pedagogical structure behind several modern tutor systems, and it is a pure prompting technique.</p>
+<p><strong>Example.</strong></p>
+<pre><code>Solve with the learner across four phases (Pólya):
+1. Understanding: ask what is given and what is to be found.
+2. Planning: ask which similar problem the learner already knows.
+3. Execution: have the learner state each step and check it.
+4. Looking back: ask how the result could be verified or generalized.
+Stay in the current phase until the learner demonstrates it; only then
+advance to the next one.</code></pre>
+</section>
+<section id="optimize-the-prompt-itself-instead-of-the-weights" class="level1" data-number="10">
+<h1 data-number="10"><span class="header-section-number">10</span> 4. Optimize the prompt itself instead of the weights</h1>
+<p><strong>What it is.</strong> Treat the system prompt as the object to optimize. Search a space of candidate “how to tutor” instructions against an automatic reward that rewards question-asking and, in the researchers’ setup, couples the reward with a penalty on answer leakage. Their multi-objective optimizer, ParetoGrad, illustrates the approach <span class="citation" data-cites="lee2026tutors"><a href="#ref-lee2026tutors" role="doc-biblioref">[2]</a></span>.</p>
+<p><strong>Why it works.</strong> The headline result of “LLMs Are Already Good Tutors” is that this training-free optimization beat RL-trained tutor fine-tunes on aggregate reward (0.719 versus 0.633, as reported by the authors) <span class="citation" data-cites="lee2026tutors"><a href="#ref-lee2026tutors" role="doc-biblioref">[2]</a></span>. If a hand-written prompt is already close to a fine-tune, an automated search over prompt variants can close the gap entirely and stay easy to maintain.</p>
+<p><strong>Example.</strong> The method needs no example text here: it is a recipe. Start from a working Socratic prompt, define a reward that scores each tutoring turn for question-asking and against leakage, then generate and keep the prompt variants that score highest. The ParetoGrad variant exists precisely because naively adding a leakage penalty can pull the model into evasive, low-quality answers; the constraint-based optimizer avoids that trade-off <span class="citation" data-cites="lee2026tutors"><a href="#ref-lee2026tutors" role="doc-biblioref">[2]</a></span>.</p>
+</section>
+<section id="prime-with-real-tutor-dialogue-as-few-shot-exemplars" class="level1" data-number="11">
+<h1 data-number="11"><span class="header-section-number">11</span> 5. Prime with real tutor dialogue as few-shot exemplars</h1>
+<p><strong>What it is.</strong> Put one or two short, high-quality tutor responses in the prompt as in-context examples before the real session starts.</p>
+<p><strong>Why it works.</strong> The best source of such exemplars is human tutoring data. MathDial built 2,848 grounded tutoring dialogues from real human tutors and showed how rich they are in pedagogical moves <span class="citation" data-cites="macina2023mathdial"><a href="#ref-macina2023mathdial" role="doc-biblioref">[7]</a></span>. Feeding the model one or two of those exchanges sets the register: short questions, wait-time, follow-up on the learner’s own words. This is a standard few-shot application of the same corpus.</p>
+<p><strong>Example (illustrative, in the style of MathDial exchanges).</strong></p>
+<pre><code>Here is an example of the desired interaction.
+
+Student: I don't see why the derivative of a product isn't just the
+             product of the derivatives.
+Tutor: What is another name for derivative, in terms of how one quantity
+       changes?
+Student: The rate of change?
+Tutor: Good. The rate of change of a product depends on how fast each
+       factor changes and how large the other one is. Which two terms
+       do you think appear?</code></pre>
+<p>A single such exchange, placed after the system prompt, shifts the whole conversation into question-led mode <span class="citation" data-cites="macina2023mathdial"><a href="#ref-macina2023mathdial" role="doc-biblioref">[7]</a></span>.</p>
+</section>
+<section id="close-the-loop-with-a-leak-detecting-judge" class="level1" data-number="12">
+<h1 data-number="12"><span class="header-section-number">12</span> 6. Close the loop with a leak-detecting judge</h1>
+<p><strong>What it is.</strong> A lightweight second model, or a single-turn classification call, that reads each tutor response and flags it as “leaking” or “clean”. On a leak, the tutor regenerates with an instruction to ask a question instead. The pattern is community practice in prompt-engineering circles (e.g.&nbsp;r/PromptEngineering) and is the operational answer to the leakage problem documented in training <span class="citation" data-cites="dinucujianu2025tutorrl"><a href="#ref-dinucujianu2025tutorrl" role="doc-biblioref">[5]</a></span>.</p>
+<p><strong>Why it works.</strong> Leakage is intermittent, so a single rule in the system prompt is not enough; monitoring every turn catches what the rules miss. This is evaluation as part of the loop, the same evaluation-driven stance used to de-risk large education deployments <span class="citation" data-cites="jurenka2024learnlm"><a href="#ref-jurenka2024learnlm" role="doc-biblioref">[8]</a></span>. It reorganizes the interaction: the model’s job is no longer to produce a perfect answer but to survive a check that it asked rather than told.</p>
+<p><strong>Example.</strong></p>
+<pre><code>TURN CHECK — classify the tutor's last reply:
+- leak: it contains the final answer, the formula, or the full solution
+- clean: it contains only questions, hints, or partial reasoning
+If the check is "leak", regenerate the reply with this instruction:
+"Answer leaking detected. Reformulate as a guiding question or a
+smaller hint."</code></pre>
+</section>
+<section id="put-it-together-a-minimal-working-template" class="level1" data-number="13">
+<h1 data-number="13"><span class="header-section-number">13</span> Put it together: a minimal working template</h1>
+<p>The techniques compose. A starting template that combines persona, guardrails, phases, and one exemplar is enough to run a useful tutor session on any current model <span class="citation" data-cites="ruudfontys2025socratictutor polya1945howtosolveit macina2023mathdial"><a href="#ref-ruudfontys2025socratictutor" role="doc-biblioref">[1]</a>, <a href="#ref-polya1945howtosolveit" role="doc-biblioref">[6]</a>, <a href="#ref-macina2023mathdial" role="doc-biblioref">[7]</a></span>.</p>
+<pre><code>You are a Socratic tutor in the four phases of Pólya
+[understanding, planning, execution, looking back].
+
+Ground rules:
+- Never reveal the final answer; give hints and sub-questions.
+- Every reply contains at least one question.
+- Stay in the current phase until the learner demonstrates mastery.
+
+[Optional: one short exemplar of the desired exchange here.]
+
+Remember: leave the learner able to solve the problem alone.
+
+Learner: ...</code></pre>
+<p>Add the leak-detecting judge as a post-processing step on every turn if you want the safety net <span class="citation" data-cites="dinucujianu2025tutorrl"><a href="#ref-dinucujianu2025tutorrl" role="doc-biblioref">[5]</a></span>. If the discussion occurs in an LMS or a chat API, the same system prompt plus judge fits behind any backend, which is why prompt-based tutoring is often the right default before committing to a dedicated model <span class="citation" data-cites="bastani2024generative"><a href="#ref-bastani2024generative" role="doc-biblioref">[4]</a></span>. When a fine-tune is still desirable, treat prompt optimization as the cheap experiment that tells you what the fine-tune would have to add <span class="citation" data-cites="lee2026tutors"><a href="#ref-lee2026tutors" role="doc-biblioref">[2]</a></span>, and hold any candidate model to the evaluation bar set out for education systems <span class="citation" data-cites="jurenka2024learnlm tack2022aiteacher"><a href="#ref-jurenka2024learnlm" role="doc-biblioref">[8]</a>, <a href="#ref-tack2022aiteacher" role="doc-biblioref">[9]</a></span>.</p>
+
+
+<div id="refs" class="references csl-bib-body" data-entry-spacing="0" role="list">
+<div id="ref-ruudfontys2025socratictutor" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[1] </div><div class="csl-right-inline">RuudFontys, <span>“Socratic-tutor-qwen2.5: A fine-tuned Qwen2.5-7B model for socratic tutoring dialogue.”</span> Hugging Face model repository, 2025. Available: <a href="https://huggingface.co/RuudFontys/socratic-tutor-qwen2.5">https://huggingface.co/RuudFontys/socratic-tutor-qwen2.5</a></div>
+</div>
+<div id="ref-lee2026tutors" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[2] </div><div class="csl-right-inline"><span class="nocase">U. Lee <em>et al.</em></span>, <span>“LLMs are already good tutors: Training-free prompt optimization for pedagogical math tutoring,”</span> <em>arXiv preprint arXiv:2605.27088</em>. 2026. Available: <a href="https://arxiv.org/abs/2605.27088">https://arxiv.org/abs/2605.27088</a></div>
+</div>
+<div id="ref-macina2025mathtutorbench" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[3] </div><div class="csl-right-inline">J. Macina, N. Daheim, I. Hakimi, M. Kapur, I. Gurevych, and M. Sachan, <span>“MathTutorBench: A benchmark for measuring open-ended pedagogical capabilities of LLM tutors,”</span> <em>arXiv preprint arXiv:2502.18940</em>. 2025. Available: <a href="https://arxiv.org/abs/2502.18940">https://arxiv.org/abs/2502.18940</a></div>
+</div>
+<div id="ref-bastani2024generative" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[4] </div><div class="csl-right-inline">H. Bastani, O. Bastani, A. Sungu, H. Ge, Ö. Kabakcı, and R. Mariman, <span>“Generative AI can harm learning,”</span> <em>SSRN Scholarly Paper 4895486</em>, 2024, Available: <a href="https://papers.ssrn.com/abstract=4895486">https://papers.ssrn.com/abstract=4895486</a></div>
+</div>
+<div id="ref-dinucujianu2025tutorrl" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[5] </div><div class="csl-right-inline">D. Dinucu-Jianu, J. Macina, N. Daheim, I. Hakimi, I. Gurevych, and M. Sachan, <span>“From problem-solving to teaching problem-solving: Aligning LLMs with pedagogy using reinforcement learning,”</span> <em>arXiv preprint arXiv:2505.15607</em>, 2025, Available: <a href="https://arxiv.org/abs/2505.15607">https://arxiv.org/abs/2505.15607</a></div>
+</div>
+<div id="ref-polya1945howtosolveit" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[6] </div><div class="csl-right-inline">G. Pólya, <em>How to solve it: A new aspect of mathematical method</em>. Princeton, NJ: Princeton University Press, 1945.</div>
+</div>
+<div id="ref-macina2023mathdial" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[7] </div><div class="csl-right-inline">J. Macina <em>et al.</em>, <span>“MathDial: A dialogue tutoring dataset with rich pedagogical properties grounded in math reasoning problems,”</span> in <em>Proceedings of the 18th workshop on innovative use of NLP for building educational applications (BEA 2023)</em>, 2023, pp. 785–795.</div>
+</div>
+<div id="ref-jurenka2024learnlm" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[8] </div><div class="csl-right-inline"><span class="nocase">I. Jurenka, M. Kunesch, <em>et al.</em></span>, <span>“Towards responsible development of generative AI for education: An evaluation-driven approach,”</span> <em>arXiv preprint arXiv:2407.12687</em>, 2024, Available: <a href="https://arxiv.org/abs/2407.12687">https://arxiv.org/abs/2407.12687</a></div>
+</div>
+<div id="ref-tack2022aiteacher" class="csl-entry" role="listitem">
+<div class="csl-left-margin">[9] </div><div class="csl-right-inline">A. Tack and C. Piech, <span>“The AI teacher test: Measuring the pedagogical ability of blender and GPT-3 in educational dialogues,”</span> <em>arXiv preprint arXiv:2205.07540</em>. 2022. Available: <a href="https://arxiv.org/abs/2205.07540">https://arxiv.org/abs/2205.07540</a></div>
+</div>
+</div>
+</section>
+
+</main> <!-- /main -->
+<script id="quarto-html-after-body" type="application/javascript">
+  window.document.addEventListener("DOMContentLoaded", function (event) {
+    // Ensure there is a toggle, if there isn't float one in the top right
+    if (window.document.querySelector('.quarto-color-scheme-toggle') === null) {
+      const a = window.document.createElement('a');
+      a.classList.add('top-right');
+      a.classList.add('quarto-color-scheme-toggle');
+      a.href = "";
+      a.onclick = function() { try { window.quartoToggleColorScheme(); } catch {} return false; };
+      const i = window.document.createElement("i");
+      i.classList.add('bi');
+      a.appendChild(i);
+      window.document.body.appendChild(a);
+    }
+    setColorSchemeToggle(hasAlternateSentinel())
+    const icon = "";
+    const anchorJS = new window.AnchorJS();
+    anchorJS.options = {
+      placement: 'right',
+      icon: icon
+    };
+    anchorJS.add('.anchored');
+    const isCodeAnnotation = (el) => {
+      for (const clz of el.classList) {
+        if (clz.startsWith('code-annotation-')) {                     
+          return true;
+        }
+      }
+      return false;
+    }
+    const onCopySuccess = function(e) {
+      // button target
+      const button = e.trigger;
+      // don't keep focus
+      button.blur();
+      // flash "checked"
+      button.classList.add('code-copy-button-checked');
+      var currentTitle = button.getAttribute("title");
+      button.setAttribute("title", "Copied!");
+      let tooltip;
+      if (window.bootstrap) {
+        button.setAttribute("data-bs-toggle", "tooltip");
+        button.setAttribute("data-bs-placement", "left");
+        button.setAttribute("data-bs-title", "Copied!");
+        tooltip = new bootstrap.Tooltip(button, 
+          { trigger: "manual", 
+            customClass: "code-copy-button-tooltip",
+            offset: [0, -8]});
+        tooltip.show();    
+      }
+      setTimeout(function() {
+        if (tooltip) {
+          tooltip.hide();
+          button.removeAttribute("data-bs-title");
+          button.removeAttribute("data-bs-toggle");
+          button.removeAttribute("data-bs-placement");
+        }
+        button.setAttribute("title", currentTitle);
+        button.classList.remove('code-copy-button-checked');
+      }, 1000);
+      // clear code selection
+      e.clearSelection();
+    }
+    const getTextToCopy = function(trigger) {
+      const outerScaffold = trigger.parentElement.cloneNode(true);
+      const codeEl = outerScaffold.querySelector('code');
+      for (const childEl of codeEl.children) {
+        if (isCodeAnnotation(childEl)) {
+          childEl.remove();
+        }
+      }
+      return codeEl.innerText;
+    }
+    const clipboard = new window.ClipboardJS('.code-copy-button:not([data-in-quarto-modal])', {
+      text: getTextToCopy
+    });
+    clipboard.on('success', onCopySuccess);
+    if (window.document.getElementById('quarto-embedded-source-code-modal')) {
+      const clipboardModal = new window.ClipboardJS('.code-copy-button[data-in-quarto-modal]', {
+        text: getTextToCopy,
+        container: window.document.getElementById('quarto-embedded-source-code-modal')
+      });
+      clipboardModal.on('success', onCopySuccess);
+    }
+      var localhostRegex = new RegExp(/^(?:http|https):\/\/localhost\:?[0-9]*\//);
+      var mailtoRegex = new RegExp(/^mailto:/);
+        var filterRegex = new RegExp('/' + window.location.host + '/');
+      var isInternal = (href) => {
+          return filterRegex.test(href) || localhostRegex.test(href) || mailtoRegex.test(href);
+      }
+      // Inspect non-navigation links and adorn them if external
+     var links = window.document.querySelectorAll('a[href]:not(.nav-link):not(.navbar-brand):not(.toc-action):not(.sidebar-link):not(.sidebar-item-toggle):not(.pagination-link):not(.no-external):not([aria-hidden]):not(.dropdown-item):not(.quarto-navigation-tool):not(.about-link)');
+      for (var i=0; i<links.length; i++) {
+        const link = links[i];
+        if (!isInternal(link.href)) {
+          // undo the damage that might have been done by quarto-nav.js in the case of
+          // links that we want to consider external
+          if (link.dataset.originalHref !== undefined) {
+            link.href = link.dataset.originalHref;
+          }
+        }
+      }
+    function tippyHover(el, contentFn, onTriggerFn, onUntriggerFn) {
+      const config = {
+        allowHTML: true,
+        maxWidth: 500,
+        delay: 100,
+        arrow: false,
+        appendTo: function(el) {
+            return el.parentElement;
+        },
+        interactive: true,
+        interactiveBorder: 10,
+        theme: 'quarto',
+        placement: 'bottom-start',
+      };
+      if (contentFn) {
+        config.content = contentFn;
+      }
+      if (onTriggerFn) {
+        config.onTrigger = onTriggerFn;
+      }
+      if (onUntriggerFn) {
+        config.onUntrigger = onUntriggerFn;
+      }
+      window.tippy(el, config); 
+    }
+    const noterefs = window.document.querySelectorAll('a[role="doc-noteref"]');
+    for (var i=0; i<noterefs.length; i++) {
+      const ref = noterefs[i];
+      tippyHover(ref, function() {
+        // use id or data attribute instead here
+        let href = ref.getAttribute('data-footnote-href') || ref.getAttribute('href');
+        try { href = new URL(href).hash; } catch {}
+        const id = href.replace(/^#\/?/, "");
+        const note = window.document.getElementById(id);
+        if (note) {
+          return note.innerHTML;
+        } else {
+          return "";
+        }
+      });
+    }
+    const xrefs = window.document.querySelectorAll('a.quarto-xref');
+    const processXRef = (id, note) => {
+      // Strip column container classes
+      const stripColumnClz = (el) => {
+        el.classList.remove("page-full", "page-columns");
+        if (el.children) {
+          for (const child of el.children) {
+            stripColumnClz(child);
+          }
+        }
+      }
+      stripColumnClz(note)
+      if (id === null || id.startsWith('sec-')) {
+        // Special case sections, only their first couple elements
+        const container = document.createElement("div");
+        if (note.children && note.children.length > 2) {
+          container.appendChild(note.children[0].cloneNode(true));
+          for (let i = 1; i < note.children.length; i++) {
+            const child = note.children[i];
+            if (child.tagName === "P" && child.innerText === "") {
+              continue;
+            } else {
+              container.appendChild(child.cloneNode(true));
+              break;
+            }
+          }
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(container);
+          }
+          return container.innerHTML
+        } else {
+          if (window.Quarto?.typesetMath) {
+            window.Quarto.typesetMath(note);
+          }
+          return note.innerHTML;
+        }
+      } else {
+        // Remove any anchor links if they are present
+        const anchorLink = note.querySelector('a.anchorjs-link');
+        if (anchorLink) {
+          anchorLink.remove();
+        }
+        if (window.Quarto?.typesetMath) {
+          window.Quarto.typesetMath(note);
+        }
+        if (note.classList.contains("callout")) {
+          return note.outerHTML;
+        } else {
+          return note.innerHTML;
+        }
+      }
+    }
+    for (var i=0; i<xrefs.length; i++) {
+      const xref = xrefs[i];
+      tippyHover(xref, undefined, function(instance) {
+        instance.disable();
+        let url = xref.getAttribute('href');
+        let hash = undefined; 
+        if (url.startsWith('#')) {
+          hash = url;
+        } else {
+          try { hash = new URL(url).hash; } catch {}
+        }
+        if (hash) {
+          const id = hash.replace(/^#\/?/, "");
+          const note = window.document.getElementById(id);
+          if (note !== null) {
+            try {
+              const html = processXRef(id, note.cloneNode(true));
+              instance.setContent(html);
+            } finally {
+              instance.enable();
+              instance.show();
+            }
+          } else {
+            // See if we can fetch this
+            fetch(url.split('#')[0])
+            .then(res => res.text())
+            .then(html => {
+              const parser = new DOMParser();
+              const htmlDoc = parser.parseFromString(html, "text/html");
+              const note = htmlDoc.getElementById(id);
+              if (note !== null) {
+                const html = processXRef(id, note);
+                instance.setContent(html);
+              } 
+            }).finally(() => {
+              instance.enable();
+              instance.show();
+            });
+          }
+        } else {
+          // See if we can fetch a full url (with no hash to target)
+          // This is a special case and we should probably do some content thinning / targeting
+          fetch(url)
+          .then(res => res.text())
+          .then(html => {
+            const parser = new DOMParser();
+            const htmlDoc = parser.parseFromString(html, "text/html");
+            const note = htmlDoc.querySelector('main.content');
+            if (note !== null) {
+              // This should only happen for chapter cross references
+              // (since there is no id in the URL)
+              // remove the first header
+              if (note.children.length > 0 && note.children[0].tagName === "HEADER") {
+                note.children[0].remove();
+              }
+              const html = processXRef(null, note);
+              instance.setContent(html);
+            } 
+          }).finally(() => {
+            instance.enable();
+            instance.show();
+          });
+        }
+      }, function(instance) {
+      });
+    }
+        let selectedAnnoteEl;
+        const selectorForAnnotation = ( cell, annotation) => {
+          let cellAttr = 'data-code-cell="' + cell + '"';
+          let lineAttr = 'data-code-annotation="' +  annotation + '"';
+          const selector = 'span[' + cellAttr + '][' + lineAttr + ']';
+          return selector;
+        }
+        const selectCodeLines = (annoteEl) => {
+          const doc = window.document;
+          const targetCell = annoteEl.getAttribute("data-target-cell");
+          const targetAnnotation = annoteEl.getAttribute("data-target-annotation");
+          const annoteSpan = window.document.querySelector(selectorForAnnotation(targetCell, targetAnnotation));
+          const lines = annoteSpan.getAttribute("data-code-lines").split(",");
+          const lineIds = lines.map((line) => {
+            return targetCell + "-" + line;
+          })
+          let top = null;
+          let height = null;
+          let parent = null;
+          if (lineIds.length > 0) {
+              //compute the position of the single el (top and bottom and make a div)
+              const el = window.document.getElementById(lineIds[0]);
+              top = el.offsetTop;
+              height = el.offsetHeight;
+              parent = el.parentElement.parentElement;
+            if (lineIds.length > 1) {
+              const lastEl = window.document.getElementById(lineIds[lineIds.length - 1]);
+              const bottom = lastEl.offsetTop + lastEl.offsetHeight;
+              height = bottom - top;
+            }
+            if (top !== null && height !== null && parent !== null) {
+              // cook up a div (if necessary) and position it 
+              let div = window.document.getElementById("code-annotation-line-highlight");
+              if (div === null) {
+                div = window.document.createElement("div");
+                div.setAttribute("id", "code-annotation-line-highlight");
+                div.style.position = 'absolute';
+                parent.appendChild(div);
+              }
+              div.style.top = top - 2 + "px";
+              div.style.height = height + 4 + "px";
+              div.style.left = 0;
+              let gutterDiv = window.document.getElementById("code-annotation-line-highlight-gutter");
+              if (gutterDiv === null) {
+                gutterDiv = window.document.createElement("div");
+                gutterDiv.setAttribute("id", "code-annotation-line-highlight-gutter");
+                gutterDiv.style.position = 'absolute';
+                const codeCell = window.document.getElementById(targetCell);
+                const gutter = codeCell.querySelector('.code-annotation-gutter');
+                gutter.appendChild(gutterDiv);
+              }
+              gutterDiv.style.top = top - 2 + "px";
+              gutterDiv.style.height = height + 4 + "px";
+            }
+            selectedAnnoteEl = annoteEl;
+          }
+        };
+        const unselectCodeLines = () => {
+          const elementsIds = ["code-annotation-line-highlight", "code-annotation-line-highlight-gutter"];
+          elementsIds.forEach((elId) => {
+            const div = window.document.getElementById(elId);
+            if (div) {
+              div.remove();
+            }
+          });
+          selectedAnnoteEl = undefined;
+        };
+          // Handle positioning of the toggle
+      window.addEventListener(
+        "resize",
+        throttle(() => {
+          elRect = undefined;
+          if (selectedAnnoteEl) {
+            selectCodeLines(selectedAnnoteEl);
+          }
+        }, 10)
+      );
+      function throttle(fn, ms) {
+      let throttle = false;
+      let timer;
+        return (...args) => {
+          if(!throttle) { // first call gets through
+              fn.apply(this, args);
+              throttle = true;
+          } else { // all the others get throttled
+              if(timer) clearTimeout(timer); // cancel #2
+              timer = setTimeout(() => {
+                fn.apply(this, args);
+                timer = throttle = false;
+              }, ms);
+          }
+        };
+      }
+        // Attach click handler to the DT
+        const annoteDls = window.document.querySelectorAll('dt[data-target-cell]');
+        for (const annoteDlNode of annoteDls) {
+          annoteDlNode.addEventListener('click', (event) => {
+            const clickedEl = event.target;
+            if (clickedEl !== selectedAnnoteEl) {
+              unselectCodeLines();
+              const activeEl = window.document.querySelector('dt[data-target-cell].code-annotation-active');
+              if (activeEl) {
+                activeEl.classList.remove('code-annotation-active');
+              }
+              selectCodeLines(clickedEl);
+              clickedEl.classList.add('code-annotation-active');
+            } else {
+              // Unselect the line
+              unselectCodeLines();
+              clickedEl.classList.remove('code-annotation-active');
+            }
+          });
+        }
+    const findCites = (el) => {
+      const parentEl = el.parentElement;
+      if (parentEl) {
+        const cites = parentEl.dataset.cites;
+        if (cites) {
+          return {
+            el,
+            cites: cites.split(' ')
+          };
+        } else {
+          return findCites(el.parentElement)
+        }
+      } else {
+        return undefined;
+      }
+    };
+    var bibliorefs = window.document.querySelectorAll('a[role="doc-biblioref"]');
+    for (var i=0; i<bibliorefs.length; i++) {
+      const ref = bibliorefs[i];
+      const citeInfo = findCites(ref);
+      if (citeInfo) {
+        tippyHover(citeInfo.el, function() {
+          var popup = window.document.createElement('div');
+          citeInfo.cites.forEach(function(cite) {
+            var citeDiv = window.document.createElement('div');
+            citeDiv.classList.add('hanging-indent');
+            citeDiv.classList.add('csl-entry');
+            var biblioDiv = window.document.getElementById('ref-' + cite);
+            if (biblioDiv) {
+              citeDiv.innerHTML = biblioDiv.innerHTML;
+            }
+            popup.appendChild(citeDiv);
+          });
+          return popup.innerHTML;
+        });
+      }
+    }
+  });
+  </script>
+<nav class="page-navigation">
+  <div class="nav-page nav-page-previous">
+      <a href="./ai-tutor.html" class="pagination-link" aria-label="Designing an AI tutor">
+        <i class="bi bi-arrow-left-short"></i> <span class="nav-page-text"><span class="chapter-number">4</span>&nbsp; <span class="chapter-title">Designing an AI tutor</span></span>
+      </a>          
+  </div>
+  <div class="nav-page nav-page-next">
+      <a href="./learning-plan.html" class="pagination-link" aria-label="Planning your learning">
+        <span class="nav-page-text"><span class="chapter-number">6</span>&nbsp; <span class="chapter-title">Planning your learning</span></span> <i class="bi bi-arrow-right-short"></i>
+      </a>
+  </div>
+</nav>
+</div> <!-- /content -->
+<footer class="footer">
+  <div class="nav-footer">
+    <div class="nav-footer-left">
+<p>Licensed under <a href="https://creativecommons.org/licenses/by-nc-sa/4.0/">CC BY-NC-SA 4.0</a>.</p>
+</div>   
+    <div class="nav-footer-center">
+      &nbsp;
+    </div>
+    <div class="nav-footer-right">
+<p>Built with <a href="https://quarto.org/">Quarto</a>.</p>
+</div>
+  </div>
+</footer>
+
+
+
+
+</body></html>

@@ -12,6 +12,12 @@
     "corpus_root": "corpus/Courses",
     "sessions_dir": "sessions"
   },
+  "docs": {
+    "base_url": "http://127.0.0.1:8765",
+    "port": 8765,
+    "www_dir": "corpus/www",
+    "sections_json": "corpus/sections.json"
+  },
   "corpus_files": {
     "00": "00_intro-parallelism.qmd",
     "01": "01_asynchronous.qmd",

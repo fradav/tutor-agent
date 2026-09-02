@@ -41,6 +41,7 @@ import time
 from typing import Any
 
 from . import config
+from .docslinks import LinkRewriter, rewrite_content
 from .llm import stream_complete
 from .tools import format_python, format_quote, grep_files, read_lines, run_python
 
@@ -750,6 +751,13 @@ class TutorEngine:
         content_parts: list[str] = []
         raw_parts: list[str] = []
         tools_used: list[dict] = []
+        # Doc cliquable : les citations ``fichier:ligne`` du contenu visible sont
+        # réécrites en liens markdown vers le book servi par tutor.docs. Le
+        # rewriter garde en buffer un suffixe de citation coupé entre deux chunks
+        # (``…01_asynchrono`` ``us.qmd:120 …``) pour ne rien casser en plein
+        # complément. Ne touche PAS le raisonnement (canal séparé) ni les
+        # messages role:"tool" renvoyés au modèle (contexte brut intact).
+        rewriter = LinkRewriter()
         finish = ""
         usage: dict = {}
         for _round in range(MAX_TOOL_ROUNDS):
@@ -762,10 +770,15 @@ class TutorEngine:
                 if dc:
                     raw_parts.append(dc)
                     for kind, text in splitter.feed(dc):
-                        (reasoning_parts if kind == "reasoning"
-                         else content_parts).append(text)
-                        if text:
-                            yield (kind, text)
+                        if kind == "reasoning":
+                            reasoning_parts.append(text)
+                            if text:
+                                yield (kind, text)
+                        else:
+                            for out in rewriter.feed(text):
+                                content_parts.append(out)
+                                if out:
+                                    yield (kind, out)
                 if fr:
                     finish = fr
                 if us:
@@ -773,10 +786,21 @@ class TutorEngine:
                 if tool_calls:
                     round_tool_calls = tool_calls
             for kind, text in splitter.finish():
-                (reasoning_parts if kind == "reasoning"
-                 else content_parts).append(text)
-                if text:
-                    yield (kind, text)
+                if kind == "reasoning":
+                    reasoning_parts.append(text)
+                    if text:
+                        yield (kind, text)
+                else:
+                    for out in rewriter.feed(text):
+                        content_parts.append(out)
+                        if out:
+                            yield (kind, out)
+            # fin du round : vide le buffer de citation en attente (un tour peut
+            # se terminer au milieu d'une mention ; le lien ne se complètera pas).
+            for out in rewriter.finish():
+                content_parts.append(out)
+                if out:
+                    yield ("content", out)
             if not round_tool_calls:
                 break
             # Le modèle veut lire le corpus : on exécute réellement l'outil et on
@@ -802,8 +826,13 @@ class TutorEngine:
                 trace, result = _exec_tool(name, args)
                 yield ("tool_start", {"tool_call_id": tc.get("id"), "tool": name,
                                        "title": title, "path": path, "args": args})
+                # Affichage : le résultat de lecture (lignes ``fichier:ligne``)
+                # est réécrit en liens cliquables pour l'étudiant ; le message
+                # role:"tool" apposé aux messages reste, lui, brut (le modèle doit
+                # voir les lignes telles quelles).
+                display = rewrite_content(result) if result else result
                 yield ("tool_progress", {"tool_call_id": tc.get("id"),
-                                          "tool": name, "result": result})
+                                          "tool": name, "result": display})
                 tools_used.append(trace)
                 messages.append({"role": "assistant", "content": None,
                                  "tool_calls": [tc]})

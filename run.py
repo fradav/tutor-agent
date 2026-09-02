@@ -10,6 +10,9 @@ Sous-commandes :
   stop                       arrête proprement le llama-server routeur géré.
   agent                      lance l'agent ACP sur stdio (transport + moteur +
                              backend) — équivalent de ``acp_agent.py``.
+  serve-docs                 sert le book public local (doc cliquable des
+                             citations) sur 127.0.0.1:8765 au premier plan
+                             (Ctrl-C pour arrêter).
 
 Exemples :
   python3 run.py start ornith-1.5-9B
@@ -58,6 +61,24 @@ def _cmd_agent(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_serve_docs(_args: argparse.Namespace) -> int:
+    """Sert le book rendu en local, au premier plan (Ctrl-C pour arrêter)."""
+    import time
+
+    from tutor import docs
+
+    result = docs.ensure()
+    print(result["detail"])
+    if result["status"] != "ok":
+        return 2
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        print("docs arrêtées")
+        return 0
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="run",
@@ -73,6 +94,7 @@ def main() -> None:
     sub.add_parser("status", help="état du port et du modèle servi").set_defaults(func=_cmd_status)
     sub.add_parser("stop", help="arrête le llama-server géré").set_defaults(func=_cmd_stop)
     sub.add_parser("agent", help="lance l'agent ACP sur stdio").set_defaults(func=_cmd_agent)
+    sub.add_parser("serve-docs", help="sert le book public local (doc cliquable)").set_defaults(func=_cmd_serve_docs)
 
     args = parser.parse_args()
     sys.exit(args.func(args))

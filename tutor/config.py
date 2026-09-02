@@ -112,6 +112,30 @@ def sessions_dir() -> Path:
     return SESSIONS_DIR
 
 
+def docs() -> dict:
+    """Section « docs » de config.json (doc locale cliquable)."""
+    return dict(_CONFIG.get("docs") or {})
+
+
+def docs_base_url() -> str:
+    """URL de base du serveur de doc ; sans slash final."""
+    return str(docs().get("base_url", "http://127.0.0.1:8765")).rstrip("/")
+
+
+def docs_port() -> int:
+    return int(docs().get("port", 8765))
+
+
+def www_dir() -> str:
+    """Dossier servi par tutor.docs (copie locale des pages HTML du book)."""
+    return _resolve_path(docs().get("www_dir", "corpus/www"))
+
+
+def sections_json() -> Path:
+    """Carte ligne→section générée par tools/build_docs_map.py."""
+    return Path(_resolve_path(docs().get("sections_json", "corpus/sections.json")))
+
+
 def corpus_files() -> dict[str, str]:
     """Carte clé courte -> nom de fichier .qmd du corpus (00…06)."""
     return dict(_CONFIG["corpus_files"])

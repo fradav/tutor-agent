@@ -21,6 +21,7 @@ import sys
 import acp
 
 from protocol import TutorAgent
+from tutor import docs
 
 
 def main() -> None:
@@ -29,6 +30,9 @@ def main() -> None:
         stream=sys.stderr,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
+    # Doc locale cliquable : assure le serveur statique du book (idempotent,
+    # ne relance rien si un autre agent le sert déjà ; neutre en mode STUB).
+    docs.ensure()
     try:
         asyncio.run(acp.run_agent(TutorAgent()))  # type: ignore[arg-type]  # duck-typé vs acp.Agent (voir protocol.py)
     except KeyboardInterrupt:

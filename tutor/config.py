@@ -4,10 +4,11 @@ Lit ``config.json`` à la racine de `Tutor-agent/` — le chemin est résolu
 relativement à ce module (``Path(__file__)``), donc indépendant du ``cwd`` de
 la session ACP (l'élève peut ouvrir l'agent depuis n'importe quel dossier).
 
-Un fichier ``config.local.json`` (optionnel, **jamais committé** — chemins de
-machine, cf. ``install.sh`` du jumeau) est fusionné par-dessus ``config.json`` :
-c'est lui qui porte les chemins du cours côté enseignant (``paths.course_dir``,
-``docs.py_dir``) pour garder ``config.json`` générique et public.
+Un fichier ``config.local.json`` (optionnel, **jamais committé**) est fusionné
+par-dessus ``config.json`` : il permet de rediriger ``paths.course_dir`` /
+``docs.py_dir`` vers une autre copie du corpus (machine de labo, clé USB). Par
+défaut ``config.json`` pointe vers le dépôt jumeau privé
+``MIASHS-Configuration-Tutorat``, qui centralise le cours à référencer.
 
 ``STUB`` (variable d'env ``TUTOR_STUB=1``) : mode sans serveur LLM ni corpus,
 utilisé par les tests unitaires (le moteur renvoie une réponse déterministe).
@@ -44,7 +45,7 @@ def _load(path: Path) -> dict:
 
 def _deep_merge(base: dict, over: dict) -> dict:
     """Fusion récursive : les clefs de ``over`` écrasent celles de ``base``, les
-    sous-dicts sont mergés en profondeur (README du jumeau / install.sh)."""
+    sous-dicts sont mergés en profondeur (README du jumeau)."""
     out = dict(base)
     for key, value in over.items():
         if key in out and isinstance(out[key], dict) and isinstance(value, dict):
@@ -157,10 +158,11 @@ def _resolve_path(value: str) -> str:
 def course_dir() -> str:
     """Racine du cours référencé (côté enseignant), ou ``""``.
 
-    ``paths.course_dir`` (défaut vide) pointe vers le répertoire qui contient
-    ``Courses/``, ``www/`` et ``sections.json`` — posé par ``config.local.json``
-    du jumeau (``install.sh``). Vide → repli sur les chemins ``corpus/*`` du
-    dépôt (auto-contenu générique, tests unitaires).
+    ``paths.course_dir`` (défaut : le dépôt jumeau `MIASHS-Configuration-Tutorat`)
+    pointe vers le répertoire qui contient ``Courses/``, ``www/`` et
+    ``sections.json`` — le corpus y est centralisé ; on le redirige au besoin via
+    ``config.local.json`` (machine de labo, clé USB). Vide → repli sur
+    ``paths.corpus_root``.
     """
     value = (_CONFIG.get("paths", {}).get("course_dir") or "").strip()
     return _resolve_path(value) if value else ""
@@ -266,9 +268,10 @@ def build_system(model: str, cwd: str = "") -> str:
 
     Aucun prompt par défaut : si aucun de ces fichiers n'existe, renvoie ``""``
     (pas de message système — le modèle ne reçoit que la conversation et les
-    outils). Les prompts FR vivent côté enseignant (jumeau) et sont déployés
-    dans le workspace projet par ``prompts/install-prompts.sh``, jamais dans le
-    runner.
+    outils). Les prompts FR vivent côté enseignant (jumeau
+    `MIASHS-Configuration-Tutorat/prompts/`) et sont **déposés** dans le
+    workspace projet comme ``AGENTS.md``/``AGENTS.<model>.md`` — aucun script,
+    jamais embarqués dans le runner.
     """
     if cwd:
         root = Path(cwd)

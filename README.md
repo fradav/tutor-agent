@@ -10,9 +10,9 @@ Two properties make this useful for tutoring:
 
 - **100% controlled prompt** — no default prompt is baked in. The agent reads
   the `AGENTS.md` / `AGENTS.<model>.md` convention from the **project opened in
-  Zed** (the session `cwd`). A course deploys its persona files there (the
-  private `MIASHS-Configuration-Tutorat` repo ships a `prompts/install-prompts.sh`
-  for this) — nothing French or course-specific lives in this public repo.
+  Zed** (the session `cwd`). A course drops its pre-assembled persona files there
+  (the private `MIASHS-Configuration-Tutorat` repo ships them in `agents/`) —
+  nothing French or course-specific lives in this public repo.
 - **Read-only, scoped tools** — the model can read the course material (`Courses/
   *.qmd`, the rendered book, the official Python doc) *and* the files of the open
   project, with bounded paths (no absolute path, no `..`). References the model
@@ -65,8 +65,9 @@ Without `uv`: `python3 -m venv .venv && .venv/bin/pip install
 'agent-client-protocol>=0.12'`, then replace `uv run python` with
 `.venv/bin/python`.
 
-The external template `models/qwen3.5-chat-template.jinja` and the sample corpus
-(`corpus/Courses/*.qmd`, `corpus/www/`, `corpus/sections.json`) are shipped.
+The external template `models/qwen3.5-chat-template.jinja` is shipped. The
+course corpus is **not**: it is centralized in the private twin (see §9 and
+§12).
 
 ## 3. System prompt: AGENTS convention, no default
 
@@ -80,8 +81,9 @@ the project opened in Zed (the session `cwd`, `tutor/config.py::build_system`):
 The model variant *replaces* the base (nothing is appended at load time), so a
 deployed `AGENTS.<model>.md` is expected to be the full prompt. Course-specific
 prompts are **not** committed here: the private `MIASHS-Configuration-Tutorat`
-repo keeps them and deploys them per workspace with
-`prompts/install-prompts.sh`.
+repo keeps their sources (`prompts/`) and ships the pre-assembled
+`AGENTS.*.md` variants (`agents/`) that you copy into a workspace by hand —
+there is no install script.
 
 ## 4. Wiring in Zed
 
@@ -175,45 +177,55 @@ The docs server (`tutor/docs.py`) therefore serves **two roots**: the course
 book at `/` and the Python doc at `/py/` (when configured). It is auto-started
 by `acp_agent.py`.
 
-Re-sync the rendered book cache:
+Re-sync the rendered book cache (the corpus lives in the private twin):
 
 ```bash
+# 1. copy the fresh book render into the twin's served www/
 rsync -a --delete --exclude slides/ --exclude downloads/ \
-  ../Cours-programmation-MIASHS-2026/docs/ corpus/www/
+  ../Cours-programmation-MIASHS-2026/docs/ \
+  ../MIASHS-Configuration-Tutorat/www/
+# 2. rebuild the twin's sections.json (anchor line→section map)
 uv run python tools/build_docs_map.py
 ```
 
 Exclusions: `slides/`, `downloads/`, and deliberately **no solutions** (no
 leak of corrected exercises into the model context).
 
-## 9. config.json — generic by default, overridden locally
+## 9. config.json — centralized corpus by default, optional local override
 
-`config.json` ships with **relative** paths resolved against `Tutor-agent/` (not
-the `cwd`), so the deliverable is self-contained:
+`config.json` resolves paths from the **repo root** (`tutor/config.py` anchors on
+`Path(__file__)`, never the session `cwd`), so the agent works no matter which
+workspace links to it in Zed. The corpus paths point by default at the **private
+twin** (the corpus is centralized there, not shipped here):
 
 ```json
 "paths": {
   "gguf_dir": "models",
   "external_template": "models/qwen3.5-chat-template.jinja",
-  "corpus_root": "corpus/Courses",
+  "corpus_root": "/…/MIASHS-Configuration-Tutorat/Courses",
   "sessions_dir": "sessions",
-  "course_dir": ""
+  "course_dir": "/…/MIASHS-Configuration-Tutorat"
 },
 "docs": {
   "base_url": "http://127.0.0.1:8765",
   "port": 8765,
-  "www_dir": "corpus/www",
-  "sections_json": "corpus/sections.json",
+  "www_dir": "/…/MIASHS-Configuration-Tutorat/www",
+  "sections_json": "/…/MIASHS-Configuration-Tutorat/sections.json",
   "py_dir": "",
   "python_doc_url": "https://docs.python.org/3/"
 }
 ```
 
-A **machine-specific** `config.local.json` (deep-merged over `config.json`,
-gitignored, never committed) carries the course paths: `paths.course_dir` (the
-folder holding `Courses/`, `www/`, `sections.json`) and `docs.py_dir` (the local
-Python doc). The private twin's `install.sh` generates it; with both empty, the
-repo's own `corpus/` and the online Python doc are used.
+`course_dir` is the anchor: `Courses/`, `www/` and `sections.json` are resolved
+under it (`config.corpus_root()` / `www_dir()` / `sections_json()` fall back to
+`paths.corpus_root` / `docs.*` when `course_dir` is empty).
+
+A **machine-specific** `config.local.json` (deep-merged over `config.json`, see
+`tutor/config.py::_deep_merge`, gitignored, never committed) overrides the paths
+for one machine or USB key — typically just `paths.course_dir` (the folder
+holding `Courses/`, `www/`, `sections.json`) and `docs.py_dir` (the local Python
+doc). Nothing generates this file: create it by hand. With both empty, the online
+Python doc (`docs.python_doc_url`) is used for `python:<ref>` citations.
 
 ### Remote fallback (endpoint + API key)
 
@@ -240,7 +252,7 @@ uv run python -m unittest tests/test_llm.py -v
 
 # everything (73 tests): test_server pure, test_protocol & test_runner_features
 # in STUB, test_tools with real contents (sections.json + localhost server on
-# corpus/www), test_llm offline (mocked urlopen)
+# the twin www/ as resolved by config), test_llm offline (mocked urlopen)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 ```
 
@@ -266,8 +278,10 @@ answer leakage, repetition). This repo is that agent.
 ## 12. Private twin
 
 The course-specific configuration lives in the private
-`MIASHS-Configuration-Tutorat/` repo (sibling): French tuteur prompts
-(`AGENTS` convention), `install.sh` (writes `config.local.json` into this
-runner), `prompts/install-prompts.sh` (deploys the prompts into a workspace),
-model-choice guidance and ACP pass findings. This repo stays generic, in
-English, and prompt-free.
+`MIASHS-Configuration-Tutorat/` repo (sibling): French tuteur prompt sources
+(`prompts/`), their pre-assembled `AGENTS.*.md` variants (`agents/`), the
+**centralized corpus** (`Courses/`, `www/`, `sections.json`) that `config.json`
+points at by default, model-choice guidance and ACP pass findings. There is no
+install script — the corpus is wired through `config.json` (overridable with
+`config.local.json`) and the prompts are copied into a workspace by hand. This
+repo stays generic, in English, and prompt-free.

@@ -1,4 +1,5 @@
-"""Génère ``corpus/sections.json`` : carte ligne→section pour la doc cliquable.
+"""Génère ``sections.json`` du dépôt jumeau : carte ligne→section pour la doc
+cliquable.
 
 Lit les sources ``.qmd`` du book public (server-side book) et les ids du HTML
 déjà rendu (``docs/``), et produit la table que ``tutor.docslinks`` utilise pour
@@ -13,7 +14,7 @@ Pour chaque fichier source :
    un slugify approximatif plus un avertissement.
 
 Usage :
-    python3 tools/build_docs_map.py [--book /chemin/book] [--out corpus/sections.json]
+    python3 tools/build_docs_map.py [--book /chemin/book] [--out sections.json]
 """
 from __future__ import annotations
 
@@ -24,7 +25,8 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 DEFAULT_BOOK = HERE.parent.parent / "Cours-programmation-MIASHS-2026"
-DEFAULT_OUT = HERE.parent / "corpus" / "sections.json"
+DEFAULT_OUT = Path(
+    "/Users/fradav/Documents/Dev/Teaching/MIASHS-Configuration-Tutorat/sections.json")
 
 HEADING_RE = re.compile(r"^(#{1,4})\s+(.+?)\s*$")
 # Les titres ancrés de quarto portent l'id dans data-anchor-id sur le <hX> ; un

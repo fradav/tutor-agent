@@ -13,15 +13,15 @@
   "paths": {
     "gguf_dir": "models",
     "external_template": "models/qwen3.5-chat-template.jinja",
-    "corpus_root": "corpus/Courses",
+    "corpus_root": "/Users/fradav/Documents/Dev/Teaching/MIASHS-Configuration-Tutorat/Courses",
     "sessions_dir": "sessions",
-    "course_dir": ""
+    "course_dir": "/Users/fradav/Documents/Dev/Teaching/MIASHS-Configuration-Tutorat"
   },
   "docs": {
     "base_url": "http://127.0.0.1:8765",
     "port": 8765,
-    "www_dir": "corpus/www",
-    "sections_json": "corpus/sections.json",
+    "www_dir": "/Users/fradav/Documents/Dev/Teaching/MIASHS-Configuration-Tutorat/www",
+    "sections_json": "/Users/fradav/Documents/Dev/Teaching/MIASHS-Configuration-Tutorat/sections.json",
     "py_dir": "",
     "python_doc_url": "https://docs.python.org/3/"
   },
@@ -41,7 +41,6 @@
       "template": "external",
       "endpoint": "",
       "mode": "normal",
-      "prompt": "tuteur-q8.md",
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.95,
@@ -57,7 +56,6 @@
       "template": "embedded",
       "endpoint": "",
       "mode": "normal",
-      "prompt": "tuteur-ornith.md",
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.95,
@@ -74,7 +72,6 @@
       "endpoint": "",
       "mode": "normal",
       "marker": "gemma",
-      "prompt": "tuteur-gemma4.md",
       "sampling": {
         "temperature": 0.6,
         "top_p": 0.95,

@@ -14,7 +14,12 @@ from pathlib import Path
 from unittest import mock
 
 from tutor import config, tools
-from tutor.sanitize import count_solution_cells, strip_solution_cells
+from tutor.sanitize import (
+    count_solution_cells,
+    count_solution_divs,
+    count_solution_headings,
+    strip_solution_cells,
+)
 
 FENCE = "```"
 
@@ -100,6 +105,85 @@ class StripSolutionCellsTest(unittest.TestCase):
     def test_count_solution_cells(self) -> None:
         self.assertEqual(count_solution_cells(_tp_doc()), 1)
         self.assertEqual(count_solution_cells("pas de cellule\n"), 0)
+
+    def test_div_solution_vide_son_texte(self) -> None:
+        src = (
+            "## Exercice\n\n"
+            ":::solution\n"
+            "La réponse est un raisonnement asymptotique.\n"
+            ":::\n"
+            "\n"
+            "Suivant.\n"
+        )
+        out = strip_solution_cells(src)
+        self.assertNotIn("raisonnement", out)
+        # contenu de la cellule vidé, structure de lignes conservée
+        self.assertEqual(out.count("\n"), src.count("\n"))
+        # l'échafaudage et le texte extérieur au div restent
+        self.assertIn("## Exercice", out)
+        self.assertIn("Suivant.", out)
+
+    def test_div_solution_avec_accolades_et_quatre_colons(self) -> None:
+        src = (
+            ":::{.solution}\n"
+            "As we already lock the increment.\n"
+            ":::\n"
+            "::::solution\n"
+            "Delaying the sum could be interesting.\n"
+            "::::\n"
+        )
+        out = strip_solution_cells(src)
+        self.assertNotIn("increment", out)
+        self.assertNotIn("interesting", out)
+
+    def test_div_callout_non_solution_intact(self) -> None:
+        src = (
+            "::: {.callout-important}\n"
+            "Never, ever put your API key in the code.\n"
+            ":::\n"
+        )
+        self.assertEqual(strip_solution_cells(src), src)
+
+    def test_div_solution_contenant_une_fence_markdown(self) -> None:
+        src = (
+            ":::solution\n"
+            "```markdown\n"
+            "# Logging each answer\n"
+            "```\n"
+            ":::\n"
+        )
+        out = strip_solution_cells(src)
+        self.assertNotIn("Logging", out)
+
+    def test_titre_solution_vide(self) -> None:
+        src = "## Solution for main process function\n\ncorps\n"
+        out = strip_solution_cells(src)
+        self.assertEqual(out.splitlines()[0].strip(), "")
+        self.assertIn("corps", out)
+
+    def test_titre_commencant_par_solutions_pluriel_vide(self) -> None:
+        src = "### Solutions possibles\n\ncorps\n"
+        out = strip_solution_cells(src)
+        self.assertEqual(out.splitlines()[0].strip(), "")
+
+    def test_titre_d_exercice_contenant_le_mot_solution_garde(self) -> None:
+        # « 9. Comparing Solutions » / « Pure asyncio solution » sont des titres
+        # d'exercices (échafaudages), pas des réponses : ils doivent survivre.
+        src = (
+            "### **9. Comparing Solutions**\n\nExercice à faire.\n"
+            "## Pure `asyncio` solution\n\nÉchafaudage `eval: false`.\n"
+        )
+        self.assertEqual(strip_solution_cells(src), src)
+
+    def test_compteurs_divs_et_titres(self) -> None:
+        src = _tp_doc() + (
+            "\n:::solution\n prose \n:::\n"
+            "\n## Solution to exercise X\n"
+        )
+        self.assertEqual(count_solution_divs(src), 1)
+        self.assertEqual(count_solution_headings(src), 1)
+        self.assertEqual(count_solution_divs("aucun\n"), 0)
+        self.assertEqual(count_solution_headings("aucun\n"), 0)
 
 
 class ToolsSanitizationTest(unittest.TestCase):

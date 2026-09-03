@@ -188,6 +188,12 @@ rsync -a --delete --exclude slides/ --exclude downloads/ \
 uv run python tools/build_docs_map.py
 ```
 
+Authoring rule for anchors: in book mode, quarto only anchors headings of level
+`##` and deeper. `#` in the source is the page title — quarto folds it (or any
+section whose text equals the `title:`) into the header without an anchor, so
+`build_docs_map.py` excludes it. A section missing from `sections.json` almost
+always means its source heading is `#` (demote it to `##`).
+
 Exclusions: `slides/`, `downloads/`, and deliberately **no solutions** (no
 leak of corrected exercises into the model context).
 

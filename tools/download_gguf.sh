@@ -19,7 +19,7 @@ mkdir -p "$GGUF_TUTORDIR"
 
 # format : repo|fichier|tag|description
 FILES=(
-  "Manojb/Qwen3.5-4B-UD-Q8_K_XL.gguf|Qwen3.5-4B-UD-Q8_K_XL.gguf|qwen3.5|Qwen3.5-4B-UD-Q8_K_XL"
+  "unsloth/Qwen3.5-4B-GGUF/Qwen3.5-4B-UD-Q8_K_XL.gguf|Qwen3.5-4B-UD-Q8_K_XL.gguf|qwen3.5|Qwen3.5-4B-UD-Q8_K_XL"
   "ornith-ai/Ornith-1.5-9B-GGUF|Ornith-1.5-9B-Q4_K_M.gguf|ornith|Ornith-1.5-9B-Q4_K_M"
   "google/gemma-4-E4B-it-qat-q4_0-gguf|gemma-4-E4B_q4_0-it.gguf|gemma4|gemma-4-E4B_q4_0-it (gated : HF_TOKEN requis)"
   "Qwen/Qwen3.5-4B|chat_template.jinja|template|chat_template.jinja (template Qwen3.5)"

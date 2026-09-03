@@ -45,10 +45,13 @@ from . import config
 from .docslinks import LinkRewriter, rewrite_content
 from .llm import stream_complete
 from .tools import (
+    find_paths,
+    find_py_files,
     format_python,
     format_quote,
     grep_files,
     list_directory,
+    py_syntax_errors,
     read_lines,
     run_python,
 )
@@ -80,10 +83,13 @@ RECOVERY_PROMPT = ("Écris maintenant ta réponse à l'étudiant, en français, 
                    "introduction. Ne mets pas ta réponse dans le raisonnement.")
 
 # Spec of the tutor's native tools (standard-tool mode, Option B):
-# grep_files / read_lines / list_directory — read-only over the course material
-# AND the open project (session cwd). *The model* triggers the calls
-# (tool_choice="auto" in llm.py); the engine executes the real tool (real
-# file:line results or "no match") and returns the result in role:"tool".
+# grep_files / read_lines / list_directory / find_path / diagnostics — read-only
+# over the course material AND the open project (session cwd). *The model*
+# triggers the calls (tool_choice="auto" in llm.py); the engine executes the
+# real tool (real file:line results or "no match") and returns the result in
+# role:"tool". find_path/diagnostics are local re-implementations of the Zed
+# Ask bios (glob + Python syntax check — LSP state is host-owned, not exposed
+# over ACP, so diagnostics is a static subset, see README §7).
 # Course files (key=name) are recalled in the descriptions so the model passes a
 # key ("01") or a file name instead of a made-up path that resolves to nothing.
 _CORPUS_HINT = ", ".join(
@@ -149,6 +155,47 @@ TOOLS_SPEC = [
                     "path": {"type": "string",
                               "description": "Project-relative directory path (e.g. \".\" or \"src\")"},
                     "max_entries": {"type": "integer", "description": "Max entries shown", "default": 15},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "find_path",
+            "description": (
+                "Find file paths matching a glob pattern in the course material "
+                "or the open project, e.g. \"**/*.py\", \"src/*.py\", \"*.qmd\", "
+                "or a course key (\"01\"). The returned paths are reusable: "
+                "pass the same names to grep_files or read_lines."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "glob": {"type": "string",
+                              "description": "Glob pattern (project-relative; a course file name, key, or substring also works)"},
+                    "offset": {"type": "integer", "description": "Skip the first N matches (pagination, default 0)", "default": 0},
+                },
+                "required": ["glob"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "diagnostics",
+            "description": (
+                "Report Python syntax errors in the open project (no `path`) "
+                "or in a single file (`path`). Static local check (ast.parse) "
+                "— errors only, lines like rel:line:col: msg; no linters, no "
+                "type checking, and the course .qmd files are never checked."
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {"type": "string",
+                              "description": "Optional: project-relative path of one Python file to check"},
                 },
                 "required": [],
             },
@@ -546,6 +593,74 @@ def _exec_tool(name: str, args: dict,
                                  max_entries=args.get("max_entries", 15))
         trace = {"tool": "list_directory", "path": requested or "."}
         return trace, "list_directory\n" + "\n".join(entries)
+    if name == "find_path":
+        pattern = args.get("glob") or ""
+        offset = _clamp_int(args.get("offset"), 0)
+        got, total, more = find_paths(
+            pattern,
+            project_dir=project_dir,
+            corpus=config.corpus_files(),
+            offset=offset,
+        )
+        trace = {"tool": "find_path", "pattern": pattern or "*",
+                 "total": total, "shown": len(got)}
+        label = pattern or "*"
+        if total == 0:
+            return (trace,
+                    f"find_path: 0 matches for {label} — try \"*.qmd\", "
+                    "\"**/*.py\", a course key (e.g. \"01\") or a substring")
+        head = f"find_path: {total} match(es) for {label}"
+        if more:
+            head += f" (showing {offset + 1}-{offset + len(got)})"
+        lines = [head] + got
+        if more:
+            lines.append(f"… more matches available (use offset={offset + len(got)})")
+        return trace, "\n".join(lines)
+    if name == "diagnostics":
+        requested = (args.get("path") or "").strip()
+        if requested:
+            resolved = _resolve_tool_paths(requested, project_dir)
+            if not resolved:
+                return ({"tool": "diagnostics", "path": requested, "errors": 0},
+                        f"diagnostics: unknown path: {requested}")
+            target = resolved[0]
+            if not target.lower().endswith(".py"):
+                return ({"tool": "diagnostics", "path": requested, "errors": 0},
+                        f"diagnostics: {requested} is not a Python file "
+                        "(only .py files are checked — course .qmd are excluded)")
+            errs = py_syntax_errors(target)
+            trace = {"tool": "diagnostics", "path": requested, "errors": len(errs)}
+            return (trace,
+                    f"diagnostics: {len(errs)} error(s) in {requested}\n"
+                    + "\n".join(errs))
+        if not project_dir:
+            return ({"tool": "diagnostics", "errors": 0},
+                    "diagnostics: no open project (session cwd) — nothing to check")
+        files = find_py_files(project_dir)
+        if not files:
+            return ({"tool": "diagnostics", "files": 0, "errors": 0},
+                    "diagnostics: 0 Python file(s) in the project — all good")
+        got_errs: dict[str, list[str]] = {}
+        proot = str(Path(project_dir).resolve())
+        for f in files:
+            errs = py_syntax_errors(f)
+            if errs:
+                got_errs[os.path.relpath(f, proot)] = errs
+        total_errors = sum(len(v) for v in got_errs.values())
+        trace = {"tool": "diagnostics", "files": len(files),
+                 "files_with_errors": len(got_errs), "errors": total_errors}
+        head = (f"diagnostics: {len(files)} Python file(s) checked, "
+                f"{len(got_errs)} with error(s), {total_errors} error(s) total, "
+                "0 warning(s) — syntax check only (static subset)")
+        if not got_errs:
+            return trace, head + " — all good"
+        lines = [head]
+        for rel, errs in sorted(got_errs.items()):
+            lines.append(f"{rel} ({len(errs)} error(s))")
+            lines += ["  " + e for e in errs[:3]]
+            if len(errs) > 3:
+                lines.append(f"  … +{len(errs) - 3} more")
+        return trace, "\n".join(lines)
     return {"tool": "other", "name": name}, f"unknown tool: {name}"
 
 
@@ -914,6 +1029,12 @@ class TutorEngine:
                     path = None
                 elif name == "list_directory":
                     title = "List directory"
+                    path = args.get("path")
+                elif name == "find_path":
+                    title = "Find files by name pattern"
+                    path = args.get("glob")
+                elif name == "diagnostics":
+                    title = "Check Python files for syntax errors"
                     path = args.get("path")
                 else:
                     title = name

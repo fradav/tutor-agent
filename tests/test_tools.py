@@ -17,6 +17,7 @@ from pathlib import Path
 from unittest import mock
 
 from tutor import config, docs, docslinks as dl
+from tutor import tools
 
 FIXTURE = {
     "01_asynchronous.qmd": {
@@ -43,6 +44,13 @@ BASE = "http://127.0.0.1:8765"
 def _load_fixture() -> None:
     dl.reset_for_tests()
     dl._SECTIONS = {k: dict(v) for k, v in FIXTURE.items()}
+
+
+def _write_tree(base: Path, files: dict[str, str]) -> None:
+    for rel, content in files.items():
+        p = base / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
 
 
 class DocslinksMappingTest(unittest.TestCase):
@@ -178,6 +186,100 @@ class RealSectionsJsonTest(unittest.TestCase):
         for fname in corpus_files:
             self.assertIn(fname, table, f"{fname} absent de la carte")
             self.assertIn("sections", table[fname])
+
+
+class FindPathUnitTest(unittest.TestCase):
+    """find_paths : clé courte / glob / sous-chaîne sur le corpus, glob projet,
+    pagination, refus des patterns absolus et montées .. """
+
+    CORPUS = {"01": "01_asynchronous.qmd",
+              "02": "02_threads.qmd",
+              "03": "03_sockets.qmd"}
+
+    def test_corpus_short_key(self) -> None:
+        got, total, more = tools.find_paths("01", corpus=self.CORPUS)
+        self.assertEqual(got, ["01_asynchronous.qmd"])
+        self.assertEqual(total, 1)
+        self.assertFalse(more)
+
+    def test_corpus_glob(self) -> None:
+        got, total, more = tools.find_paths("*.qmd", corpus=self.CORPUS)
+        self.assertEqual(total, 3)
+        self.assertFalse(more)
+        self.assertIn("01_asynchronous.qmd", got)
+
+    def test_corpus_substring(self) -> None:
+        got, total, _ = tools.find_paths("sockets", corpus=self.CORPUS)
+        self.assertEqual(got, ["03_sockets.qmd"])
+        self.assertEqual(total, 1)
+
+    def test_pagination(self) -> None:
+        got, total, more = tools.find_paths(
+            "*.qmd", corpus=self.CORPUS, max_results=2)
+        self.assertEqual(len(got), 2)
+        self.assertEqual(total, 3)
+        self.assertTrue(more)
+        got2, _, more2 = tools.find_paths(
+            "*.qmd", corpus=self.CORPUS, max_results=2, offset=2)
+        self.assertEqual(len(got2), 1)
+        self.assertFalse(more2)
+
+    def test_absolute_pattern_refused(self) -> None:
+        got, total, more = tools.find_paths("/etc/passwd", corpus=self.CORPUS)
+        self.assertEqual((got, total, more), ([], 0, False))
+
+    def test_dotdot_climb_refused(self) -> None:
+        got, total, more = tools.find_paths("../secret", corpus=self.CORPUS)
+        self.assertEqual((got, total, more), ([], 0, False))
+
+    def test_project_glob_noise_filtered(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            _write_tree(base, {
+                "src/a.py": "x = 1\n",
+                ".venv/x.py": "y = 2\n",
+                "notes.txt": "t\n",
+            })
+            got, total, _ = tools.find_paths(
+                "**/*.py", project_dir=str(base))
+            self.assertEqual(got, ["src/a.py"])
+            self.assertEqual(total, 1)
+
+    def test_empty_pattern_yields_star(self) -> None:
+        got, total, _ = tools.find_paths("", corpus=self.CORPUS)
+        self.assertEqual(total, 3)
+
+
+class PySyntaxErrorsUnitTest(unittest.TestCase):
+    """py_syntax_errors : fichier valide → [], invalide → fichier:ligne:col: msg,
+    binaire/NUL, fichier absent → [] (jamais de traceback)."""
+
+    def test_good_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "ok.py"
+            p.write_text("def f():\n    return 1\n", encoding="utf-8")
+            self.assertEqual(tools.py_syntax_errors(str(p)), [])
+
+    def test_bad_file_reports_line_column_message(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "bad.py"
+            p.write_text("def oops(:\n", encoding="utf-8")
+            errs = tools.py_syntax_errors(str(p))
+            self.assertEqual(len(errs), 1)
+            self.assertTrue(errs[0].startswith("bad.py:1:"), errs[0])
+            self.assertIn(":", errs[0].split("bad.py:", 1)[1])
+
+    def test_nul_bytes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "nul.py"
+            p.write_bytes(b"x = 1\x00print(2)\n")
+            errs = tools.py_syntax_errors(str(p))
+            self.assertEqual(len(errs), 1)
+            self.assertIn("NUL bytes", errs[0])
+
+    def test_missing_file_empty(self) -> None:
+        self.assertEqual(
+            tools.py_syntax_errors("/nonexistent/never.py"), [])
 
 
 class DocsServerTest(unittest.TestCase):

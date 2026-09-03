@@ -145,8 +145,24 @@ the process.
 
 ## 7. Tools (read-only, two roots)
 
-`TOOLS_SPEC` (English): `grep_files`, `read_lines`, `list_directory`. The model
-triggers them via native `tool_calls`; `_exec_tool` performs the real read.
+`TOOLS_SPEC` (English): `grep_files`, `read_lines`, `list_directory`, plus two
+in parity with the Zed **Ask** profile — `find_path` (glob for file names across
+the corpus **and** the open project) and `diagnostics` (report Python syntax
+errors). The model triggers them via native `tool_calls`; `_exec_tool` performs
+the real read.
+
+**Ask-parity caveat**: the ACP SDK (0.12.1) has **no host-provided-tools
+mechanism** — the tool surface is agent→client only. Zed's Ask `find_path` and
+`diagnostics` are *host* tools backed by Zed's project index + LSP state, which
+an external ACP process cannot borrow. Both are re-implemented locally:
+
+- `find_path` is a **full filesystem glob** (recursive on `**`, noise dirs —
+  `.venv`, `__pycache__`, `node_modules`, … — skipped), paginated (page 50,
+  cap 500) and returning paths reusable directly in `grep_files`/`read_lines`;
+- `diagnostics` is a **static subset**: `ast.parse` per `.py` file (no temp
+  artifact), **errors only, 0 warnings**, no linters and no type checking — the
+  LSPs that power the real tool are host-owned. Course `.qmd` files are never
+  checked.
 
 Paths resolve against two roots, in order (`_resolve_tool_paths`):
 
@@ -256,7 +272,7 @@ TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
 # llm (remote fallback auth: endpoint + API key, mocked urlopen) — offline
 uv run python -m unittest tests/test_llm.py -v
 
-# everything (73 tests): test_server pure, test_protocol & test_runner_features
+# everything (95 tests): test_server pure, test_protocol & test_runner_features
 # in STUB, test_tools with real contents (sections.json + localhost server on
 # the twin www/ as resolved by config), test_llm offline (mocked urlopen)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
@@ -264,8 +280,11 @@ TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 
 `test_runner_features` covers the refactor: AGENTS convention, project-relative
 tool paths (absolute / `..` refused), `list_directory`, `config.local.json`
-merge, `python:<ref>` rewriting (full + streaming), and the two-root docs
-server.
+merge, `python:<ref>` rewriting (full + streaming), the two-root docs server,
+and the Ask-parity tools `find_path` (project glob + noise-dir exclusion +
+absolute / `..` refusal) and `diagnostics` (single file, whole project, .qmd
+rejected). `test_tools` adds direct unit coverage for `find_paths` (corpus key /
+glob / substring / pagination) and `py_syntax_errors` (good, bad, NUL, missing).
 
 ## 11. Why an ACP agent? (and why not Zed + Ask + erased prompt)
 

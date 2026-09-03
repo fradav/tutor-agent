@@ -93,6 +93,7 @@ class ProjectToolPathsTest(unittest.TestCase):
             "notes.txt": "alpha\nbeta\ngamma\n",
             "src/main.py": "def main():\n    return 42\n",
             "src/util.py": "VALEUR = 1\n",
+            ".venv/foo.py": "x = 1\n",
         })
 
     def test_read_lines_project_file(self) -> None:
@@ -153,6 +154,92 @@ class ProjectToolPathsTest(unittest.TestCase):
             "list_directory", {"path": "nope"}, project_dir=str(self.root),
         )
         self.assertIn("unknown path", result)
+
+    def test_find_path_project_glob(self) -> None:
+        trace, result = engine._exec_tool(
+            "find_path", {"glob": "**/*.py"}, project_dir=str(self.root),
+        )
+        self.assertIn("src/main.py", result)
+        self.assertIn("src/util.py", result)
+        self.assertEqual(trace["total"], 2)
+
+    def test_find_path_noise_dir_excluded(self) -> None:
+        trace, result = engine._exec_tool(
+            "find_path", {"glob": "**/*.py"}, project_dir=str(self.root),
+        )
+        self.assertNotIn(".venv/foo.py", result)
+        self.assertNotIn("foo.py", result)
+
+    def test_find_path_absolute_refused(self) -> None:
+        trace, result = engine._exec_tool(
+            "find_path", {"glob": "/etc/passwd"}, project_dir=str(self.root),
+        )
+        self.assertIn("0 matches", result)
+        self.assertEqual(trace["total"], 0)
+
+    def test_find_path_dotdot_climb_refused(self) -> None:
+        trace, result = engine._exec_tool(
+            "find_path", {"glob": "../*.py"}, project_dir=str(self.root),
+        )
+        self.assertIn("0 matches", result)
+        self.assertEqual(trace["total"], 0)
+
+    def test_find_path_empty_pattern_yields_star(self) -> None:
+        trace, result = engine._exec_tool(
+            "find_path", {}, project_dir=str(self.root),
+        )
+        self.assertEqual(trace["pattern"], "*")
+        self.assertIn("notes.txt", result)
+
+    def test_diagnostics_single_good_file(self) -> None:
+        trace, result = engine._exec_tool(
+            "diagnostics", {"path": "src/main.py"}, project_dir=str(self.root),
+        )
+        self.assertIn("0 error(s)", result)
+        self.assertEqual(trace["errors"], 0)
+
+    def test_diagnostics_single_bad_file(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_tree(root, {"src/broken.py": "def oops(:\n"})
+            trace, result = engine._exec_tool(
+                "diagnostics", {"path": "src/broken.py"}, project_dir=str(root),
+            )
+            self.assertIn("1 error(s)", result)
+            self.assertIn("broken.py:1:", result)
+            self.assertEqual(trace["errors"], 1)
+
+    def test_diagnostics_whole_project_all_good(self) -> None:
+        trace, result = engine._exec_tool(
+            "diagnostics", {}, project_dir=str(self.root),
+        )
+        self.assertIn("2 Python file(s)", result)
+        self.assertIn("all good", result)
+        self.assertEqual(trace["errors"], 0)
+
+    def test_diagnostics_whole_project_mixed(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            _write_tree(root, {
+                "a.py": "x = 1\n",
+                "b.py": "def boom(:\n",
+            })
+            trace, result = engine._exec_tool(
+                "diagnostics", {}, project_dir=str(root),
+            )
+            self.assertIn("2 Python file(s)", result)
+            self.assertIn("1 with error(s)", result)
+            self.assertIn("1 error(s) total", result)
+            self.assertIn("b.py (1 error(s))", result)
+            self.assertEqual(trace["errors"], 1)
+
+    def test_diagnostics_qmd_path_rejected(self) -> None:
+        _write_tree(self.root, {"cours.qmd": "# titre\n"})
+        trace, result = engine._exec_tool(
+            "diagnostics", {"path": "cours.qmd"}, project_dir=str(self.root),
+        )
+        self.assertIn("not a Python file", result)
+        self.assertEqual(trace["errors"], 0)
 
 
 class LocalConfigMergeTest(unittest.TestCase):

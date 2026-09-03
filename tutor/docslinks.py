@@ -6,7 +6,10 @@ avec ``python:<ref>`` (module, éventuellement ``module#ancre``). Ce module
 transforme ces mentions en liens cliquables :
 
 - ``nom.qmd:ligne`` → ``[nom.qmd:ligne](BASE/chemin.html#ancre)`` — book
-  servi en local par ``tutor.docs`` (cartes ``corpus/sections.json``) ;
+  servi en local par ``tutor.docs`` (cartes ``corpus/sections.json``) ; un
+  préfixe de dossier est supporté et conservé dans le libellé
+  (``Applications/03_0_Asynchronous.qmd:63`` →
+  ``[Applications/03_0_Asynchronous.qmd:63](BASE/Courses/Applications/03_0_Asynchronous.html#…))`` ;
 - ``nom.qmd`` **seul** (label nu — cellule de tableau, prose sans ligne) →
   ``[nom.qmd](BASE/chemin.html)`` — lien de la page entière : tout fichier
   connu du corpus reste cliquable même quand le modèle ne reproduit pas
@@ -48,15 +51,21 @@ from typing import Any
 from . import config, docs
 
 # Un motif de citation : `nom.qmd:ligne` (l'extension ``.qmd`` fait partie du
-# groupe = clé de la carte). Frontière gauche = pas un caractère de « nom de
-# fichier » (sinon on réécrirait au milieu d'un identifiant) ; frontière droite
-# = pas un chiffre (pour ne pas avaler `1200` en citant :120). Un wrapper de
-# backticks `` ` `` directement autour de la mention (groupe 1, facultatif) est
-# avalé puis retiré dans ``_rewrite`` : sinon le lien se rendrait en span de
-# code non cliquable dans la réponse du modèle.
+# groupe = clé de la carte), éventuellement préfixé d'un chemin de dossier
+# (`Applications/03_0_Asynchronous.qmd:63`) — le préfixe est capturé (groupe
+# ``path``) pour que ``Applications/`` fasse partie du libellé du lien (sinon il
+# reste hors du lien et se rend en texte/code non cliquable). Frontière gauche =
+# pas un caractère de « nom de fichier » ni un ``/`` (on ne réécrit pas au
+# milieu d'un chemin ou d'un identifiant) ; frontière droite = pas un chiffre
+# (pour ne pas avaler `1200` en citant :120). Un wrapper de backticks `` ` ``
+# directement autour de la mention (groupe 1, facultatif) est avalé puis retiré
+# dans ``_rewrite`` : sinon le lien se rendrait en span de code non cliquable
+# dans la réponse du modèle.
 _CITE_RE = re.compile(
     r"(?P<ouvr>`{0,2})"
-    r"(?<![A-Za-z0-9_.\-])([A-Za-z0-9_][A-Za-z0-9_.\-]*\.qmd):(\d+)(?![0-9])"
+    r"(?<![A-Za-z0-9_.\-/])"
+    r"(?P<path>(?:[A-Za-z0-9_][A-Za-z0-9_.\-]*/)*)"
+    r"(?P<fname>[A-Za-z0-9_][A-Za-z0-9_.\-]*\.qmd):(?P<line>\d+)(?![0-9])"
     r"(?P=ouvr)"
 )
 
@@ -77,10 +86,13 @@ _PY_REF_RE = re.compile(
 # fichier nu (`01_asynchron` + `ous.qmd`) coupé entre deux chunks soit recomposé
 # avant réécriture. Le backtick (`` ` ``) autorisé en tête des deux premières
 # branches permet de recomposer aussi un nom coupé à l'intérieur de backticks.
+# Le ``/`` et le ``.`` des classes couvrent aussi un préfixe de chemin
+# (`Applications/03_0_Asynchronous`) coupé entre deux chunks : le chemin entier
+# est retenu en attente pour être recomposé avant réécriture.
 _TAIL_RE = re.compile(
-    r"(?:`{0,2}[A-Za-z0-9_.\-]*\.qmd:?\d*"  # recoupe ``01_asynchron`` → `01_asynchronous.qmd:12`
+    r"(?:`{0,2}[A-Za-z0-9_.\-/]*\.qmd:?\d*"  # recoupe ``01_asynchron`` → `01_asynchronous.qmd:12`
     r"|`{0,2}python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?"
-    r"|[A-Za-z0-9_.\-`]+)$"
+    r"|[A-Za-z0-9_.\-/`]+)$"
 )
 
 # Borne haute d'un suffixe retenu : au-delà, ce n'est pas un nom de fichier
@@ -135,9 +147,11 @@ def _basenames() -> tuple[str, ...]:
 def _filename_re() -> re.Pattern | None:
     """Motif des fichiers du corpus cités **sans** ligne (label nu).
 
-    Facade arrière ``[a-z0-9_.-]`` (pas au milieu d'un identifiant) et devant
-    rien qui prolonge un nom (`a-z0-9_-:`) — une mention ``nom.qmd:NN`` reste
-    gérée par ``_CITE_RE``. Un ``.`` final (fin de phrase) est autorisé.
+    Facade arrière ``[a-z0-9_.-/]`` (pas au milieu d'un identifiant ni d'un
+    chemin) et devant rien qui prolonge un nom (`a-z0-9_-:`) — une mention
+    ``nom.qmd:NN`` reste gérée par ``_CITE_RE``. Un ``.`` final (fin de phrase)
+    est autorisé. Un préfixe de dossier (`Applications/`) devant le nom est
+    capturé (groupe ``path``) et conservé dans le libellé du lien.
     """
     global _FILENAMES_RE
     names = _basenames()
@@ -146,9 +160,10 @@ def _filename_re() -> re.Pattern | None:
     pattern = None
     if names:
         pattern = re.compile(
-            r"(?P<ouvr>`{0,2})(?<![A-Za-z0-9_.\-])("
-            + "|".join(re.escape(n) for n in names)
-            + r")(?![A-Za-z0-9_\-:])(?P=ouvr)"
+            r"(?P<ouvr>`{0,2})(?<![A-Za-z0-9_.\-/])"
+            r"(?P<path>(?:[A-Za-z0-9_][A-Za-z0-9_.\-]*/)*)"
+            r"(?P<fname>" + "|".join(re.escape(n) for n in names) + r")"
+            r"(?![A-Za-z0-9_\-:])(?P=ouvr)"
         )
     _FILENAMES_RE = (names, pattern)
     return pattern
@@ -208,8 +223,11 @@ def _rewrite(text: str, base_url: str) -> str:
     def _repl(m: re.Match) -> str:
         # groupe 1 = wrapper de backticks facultatif (voir ``_CITE_RE``) : on le
         # laisse tomber pour que le lien se rende cliquable, pas en span de code.
-        url = section_url_for(m.group(2), int(m.group(3)), base_url)
-        return f"[{m.group(2)}:{m.group(3)}]({url})" if url else m.group(0)
+        # Le préfixe de dossier (``path``) est dans le libellé, sinon il resterait
+        # hors du lien et le casserait.
+        fname = m.group("path") + m.group("fname")
+        url = section_url_for(fname, int(m.group("line")), base_url)
+        return f"[{fname}:{m.group('line')}]({url})" if url else m.group(0)
 
     text = _CITE_RE.sub(_repl, text)
 
@@ -220,9 +238,11 @@ def _rewrite(text: str, base_url: str) -> str:
     fname_re = _filename_re()
     if fname_re:
         def _fname_repl(m: re.Match) -> str:
-            # groupe 1 = wrapper de backticks facultatif (voir ``_filename_re``).
-            url = section_url_for(m.group(2), 0, base_url)
-            return f"[{m.group(2)}]({url})" if url else m.group(0)
+            # groupe 1 = wrapper de backticks facultatif (voir ``_filename_re``) ;
+            # le préfixe de dossier (``path``) est dans le libellé du lien.
+            fname = m.group("path") + m.group("fname")
+            url = section_url_for(fname, 0, base_url)
+            return f"[{fname}]({url})" if url else m.group(0)
 
         text = fname_re.sub(_fname_repl, text)
 

@@ -15,6 +15,20 @@ l'existant (harness du Playground) à reprendre ou à copier.
 
 ---
 
+## Statut — branchement du corpus tuteur (fait, 03/09)
+
+Le corpus du tuteur est servi par le dépôt jumeau privé `MIASHS-Configuration-Tutorat`
+(pas encore initialisé en git) à partir du cours propre `Cours-programmation-MIASHS-2025` :
+`corpus_root` = `<cours>/Courses` (12 `.qmd`) + `Courses/Applications` (14 `.qmd`), solutions
+exclues (jamais `Courses/Solutions` ; `_read_lines` purge aussi les cellules `tags: [solution]`).
+`build_docs_map.py` ré-indexé : **440 sections, 0 ancre non mappée**, `sections.json` + 14 pages TP
+locales régénérées — aucune fuite de solution (`0 data-tags="[solution]"`, `0 chunks_rsquared`).
+`docs.ensure()` re-sert `www/` avec repli de port (8765 squatté par Betterbird → effectif **8766**) ;
+réécriture `fichier:ligne` → lien local cliquable validée HTTP 200 (ancres = `sections.json`) ;
+`config.corpus_files()` = 26/26 alignés.
+
+---
+
 ## 0. Contexte et décisions de cadrage
 
 > Ce qui suit est l'**historique de cadrage** (2026-2027). Ministral a depuis été

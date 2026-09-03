@@ -23,13 +23,16 @@ Cas du book dérivé de slides (book 2025), gérés ici :
 
 Sections : ``##`` et plus, hors blocs de code.
 
-TP (annexe B) : les sujets ``Courses/Applications/*.qmd`` ne sont pas rendus en
-HTML par le book — la carte est donc complétée par une page locale ancrée
-créée sous ``--www/Courses/Applications/<stem>.html`` (titres en ``<h2..h6>
-id="ancre" data-anchor-id="ancre"``, reste du fichier échappé en ``<pre>``),
-pour que les citations ``fichier:ligne`` du tuteur restent cliquables. Le book
-2025 sert de source de vérité pour les sujets ; les solutions ne sont jamais
-indexées ni servies.
+TP (annexe B) : les sujets ``Courses/Applications/*.qmd`` sont rendus en vraies
+pages quarto par le profil notebooks du book 2025
+(``docs/docs-resources/Notebooks/Courses/Applications/<stem>.html``), sans les
+solutions — ce sont elles qui sont servies (copiées dans
+``--www/Courses/Applications/`` avec leurs assets ``*_files/`` et leurs
+notebooks ``.ipynb``/``.py``), pour que les citations ``fichier:ligne`` du
+tuteur ouvrent une page quarto propre et cliquable. En l'absence de rendu
+notebooks, repli sur une page locale ancrée synthétisée (titres en
+``<h2..h6>`` + reste en ``<pre>``). Les solutions ne sont jamais indexées ni
+servies.
 
 Usage :
     python3 tools/build_docs_map.py [--book /chemin/book] [--out sections.json]
@@ -41,6 +44,7 @@ import argparse
 import html as H
 import json
 import re
+import shutil
 import sys
 import unicodedata as U
 from pathlib import Path
@@ -262,13 +266,32 @@ def main() -> int:
             # embarquées dans les sources du book sont vidées — elles ne
             # doivent être ni servies (page locale) ni indexées (carte).
             src_text = strip_solution_cells(src_text)
-            # Sujets de TP : pas de HTML rendu par le book → page locale ancrée.
+            # Vraie page quarto du sujet (profil notebooks du book 2025, sans
+            # solutions) : on la sert telle quelle, avec ses assets ``_files/``
+            # et ses notebooks ``.ipynb``/``.py`` liés par la page.
+            tp_render_dir = (docs / "docs-resources" / "Notebooks"
+                             / "Courses" / "Applications")
+            tp_render = tp_render_dir / f"{stem}.html"
             html_rel = f"Courses/Applications/{stem}.html"
-            html_text = synthesize_tp_html(src_text, stem)
-            html_dest = args.www / html_rel
-            html_dest.parent.mkdir(parents=True, exist_ok=True)
-            html_dest.write_text(html_text, encoding="utf-8")
-            print(f"  {rel}: HTML local généré ({html_dest.relative_to(args.www)})")
+            if tp_render.exists():
+                tp_www = args.www / "Courses" / "Applications"
+                tp_www.mkdir(parents=True, exist_ok=True)
+                for p in sorted(tp_render_dir.iterdir()):
+                    dst = tp_www / p.name
+                    if p.is_file():
+                        dst.write_text(p.read_text(encoding="utf-8"),
+                                       encoding="utf-8")
+                    else:
+                        shutil.copytree(p, dst, dirs_exist_ok=True)
+                html_text = tp_render.read_text(encoding="utf-8")
+                print(f"  {rel}: HTML rendu (notebooks) + assets copiés dans www")
+            else:
+                # Repli historique : pas de rendu notebooks → page locale ancrée.
+                html_text = synthesize_tp_html(src_text, stem)
+                html_dest = args.www / html_rel
+                html_dest.parent.mkdir(parents=True, exist_ok=True)
+                html_dest.write_text(html_text, encoding="utf-8")
+                print(f"  {rel}: HTML local généré (repli, pas de rendu notebooks)")
         else:
             html_rel = (f"Courses/{stem}.html" if rel.parts[0] == "Courses"
                         else f"{stem}.html")

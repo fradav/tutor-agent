@@ -38,6 +38,13 @@ FIXTURE = {
             {"line": 140, "slug": "set-up-the-key-in-zed-1", "title": "Set up the key in Zed"},
         ],
     },
+    "03_0_Asynchronous.qmd": {
+        "html": "Courses/Applications/03_0_Asynchronous.html",
+        "lines": [63],
+        "sections": [
+            {"line": 63, "slug": "exemples", "title": "Exemples"},
+        ],
+    },
 }
 
 BASE = "http://127.0.0.1:8765"
@@ -167,6 +174,30 @@ class DocslinksRewriteTest(unittest.TestCase):
             f"({BASE}/Courses/01_asynchronous.html) quand tu veux.",
         )
 
+    def test_chemin_prefixe_citation(self) -> None:
+        # `dossier/nom.qmd:ligne` → lien cliquable dont le libellé garde le
+        # chemin (un préfixe laissé hors du lien casserait la cliquabilité)
+        got = dl.rewrite_content(
+            "Voir Applications/03_0_Asynchronous.qmd:63 ici.", BASE
+        )
+        self.assertIn(
+            f"[Applications/03_0_Asynchronous.qmd:63]"
+            f"({BASE}/Courses/Applications/03_0_Asynchronous.html#exemples)",
+            got,
+        )
+        self.assertNotIn("Applications/[03_0_Asynchronous", got)
+
+    def test_chemin_prefixe_backtick_enleve(self) -> None:
+        # backticks autour du chemin complet → retirés, préfixe dans le lien
+        got = dl.rewrite_content(
+            "cf. `Applications/03_0_Asynchronous.qmd` quand tu veux.", BASE
+        )
+        self.assertEqual(
+            got,
+            f"cf. [Applications/03_0_Asynchronous.qmd]"
+            f"({BASE}/Courses/Applications/03_0_Asynchronous.html) quand tu veux.",
+        )
+
     def test_python_ref_backtick_enleve(self) -> None:
         got = dl.rewrite_content("Utilise `python:asyncio` ici.", BASE)
         self.assertIn(
@@ -281,6 +312,20 @@ class DocslinksStreamingTest(unittest.TestCase):
             "".join(out),
             f"Voir [01_asynchronous.qmd:120]"
             f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
+        )
+
+    def test_chemin_prefixe_coupe_recompose(self) -> None:
+        # chemin de dossier coupé entre deux chunks (par le `Applications/` et au
+        # milieu du nom) → recomposé, lié avec le préfixe, backticks retirés
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["cf. `Applications/", "03_0_Asynchro", "nous.qmd:63` ok"]:
+            out += rw.feed(c)
+        out += rw.finish()
+        self.assertEqual(
+            "".join(out),
+            f"cf. [Applications/03_0_Asynchronous.qmd:63]"
+            f"({BASE}/Courses/Applications/03_0_Asynchronous.html#exemples) ok",
         )
 
 

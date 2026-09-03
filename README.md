@@ -211,6 +211,8 @@ Re-sync the rendered book cache (the corpus lives in the private twin):
 rsync -a --delete \
   --exclude slides/ --exclude downloads/ \
   --exclude docs-resources/Notebooks/Courses/Solutions/ \
+  --exclude 'docs-resources/Notebooks/Courses/Applications/' \
+  --exclude 'docs-resources/Slides/Courses/Applications/' \
   ../Cours-programmation-MIASHS-2025/docs/ \
   ../MIASHS-Configuration-Tutorat/www/
 # 2. rebuild the twin's sections.json + regenerate the local TP pages
@@ -226,17 +228,23 @@ section whose text equals the `title:`) into the header without an anchor, so
 always means its source heading is `#` (demote it to `##`).
 
 Exclusions: `slides/`, `downloads/`, the
-`docs-resources/Notebooks/Courses/Solutions/` folder, and deliberately **no
-solutions** anywhere (no leak of corrected exercises into the model context —
-`sections.json` and `www/` never reference them, and the twin's annexe pages
-`applications.html` / `applications.llms.md` are kept solution-free). The
-annexe-TP **subjects** (`Courses/Applications/*.qmd`) come from the 2025 book
-**with their answers embedded** in quarto cells tagged `#| tags: [solution]`;
-these cells are stripped everywhere: the runner's `grep_files`/`read_lines`
-never show them to the model, and `build_docs_map.py` regenerates the local TP
-pages from the sanitized text. The strip is line-preserving (blank lines stay
-in place), so `fichier:ligne` citations and the anchor map keep working. The
-exercise *scaffolds* (`#| eval: false` cells with `…` placeholders) are kept
+`docs-resources/Notebooks/Courses/Solutions/` folder, the executed annexe
+notebooks/slides (`docs-resources/{Notebooks,Slides}/Courses/Applications/` —
+running the TPs produces them with the answers baked in, so they are never
+synced or served), and deliberately **no solutions** anywhere (no leak of
+corrected exercises into the model context — `sections.json` and `www/` never
+reference them, and the twin's annexe pages `applications.html` /
+`applications.llms.md` are kept solution-free). The annexe-TP **subjects**
+(`Courses/Applications/*.qmd`) come from the 2025 book **with their answers
+embedded** in three forms that `tutor/sanitize.strip_solution_cells` blanks:
+quarto code cells tagged `#| tags: [solution]`, fenced `:::solution` /
+`:::{.solution}` divs (answer prose), and markdown headings that *start* with
+« Solution … ». The strip runs everywhere: the runner's `grep_files` /
+`read_lines` never show these to the model, and `build_docs_map.py` regenerates
+the local TP pages from the sanitized text. It is line-preserving (blank lines
+stay in place), so `fichier:ligne` citations and the anchor map keep working.
+The exercise *scaffolds* (`#| eval: false` cells with `…` placeholders) and legit
+exercise titles that merely contain the word (*9. Comparing Solutions*) are kept
 verbatim — only completed answers are removed.
 
 Questions ("where does a TP subject live?") are answered through the
@@ -305,9 +313,10 @@ TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
 # llm (remote fallback auth: endpoint + API key, mocked urlopen) — offline
 uv run python -m unittest tests/test_llm.py -v
 
-# everything (95 tests): test_server pure, test_protocol & test_runner_features
+# everything (129 tests): test_server pure, test_protocol & test_runner_features
 # in STUB, test_tools with real contents (sections.json + localhost server on
-# the twin www/ as resolved by config), test_llm offline (mocked urlopen)
+# the twin www/ as resolved by config), test_llm offline (mocked urlopen),
+# test_sanitize (incl. the :::solution-div and "Solution…"-heading strip)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 ```
 

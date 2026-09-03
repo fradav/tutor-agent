@@ -241,7 +241,10 @@ def python_doc_base_url() -> str:
 
 
 def corpus_files() -> dict[str, str]:
-    """Carte clé courte -> nom de fichier .qmd du corpus (00…06)."""
+    """Carte clé -> nom de fichier .qmd du corpus (12 chapitres + 14 sujets de
+    TP de l'annexe B, sous ``Applications/``). Les TP ne sont pas rendus en HTML
+    par le book : leur page locale ancrée est générée par
+    ``tools/build_docs_map.py`` dans ``www/Courses/Applications``."""
     return dict(_CONFIG["corpus_files"])
 
 

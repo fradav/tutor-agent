@@ -431,7 +431,7 @@ def initial_state(
         "persona": persona,
         "session": label,
         "title": title if title else "Session tuteur socratique (conversation libre)",
-        "module": module if module else "corpus MIASHS — programmation avancée (00→06)",
+        "module": module if module else "corpus MIASHS — programmation avancée (book 2025 : 12 chapitres + annexe B, 14 TP)",
         "focus": focus if focus else "ancrage sur le matériel du cours, démarche socratique, anti-invention",
         "corpus_root": config.corpus_root(),
         "reasoning_preserve": True,

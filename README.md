@@ -14,7 +14,8 @@ Two properties make this useful for tutoring:
   (the private `MIASHS-Configuration-Tutorat` repo ships them in `agents/`) —
   nothing French or course-specific lives in this public repo.
 - **Read-only, scoped tools** — the model can read the course material (`Courses/
-  *.qmd`, the rendered book, the official Python doc) *and* the files of the open
+  *.qmd` — 12 chapters plus the annexe-TP subjects under `Courses/Applications/` —,
+  the rendered book, the official Python doc) *and* the files of the open
   project, with bounded paths (no absolute path, no `..`). References the model
   writes as `fichier.qmd:line` and `python:<ref>` come back as **clickable links**
   into the locally served docs.
@@ -193,14 +194,28 @@ The docs server (`tutor/docs.py`) therefore serves **two roots**: the course
 book at `/` and the Python doc at `/py/` (when configured). It is auto-started
 by `acp_agent.py`.
 
+`docs.ensure()` verifies the port is really **our** server (marker
+`/__tutor_docs__`) with the right root (it fetches a real page from
+`www/`). If the configured port is taken by another process — e.g.
+Betterbird/Thunderbird grabbing 8765 — `ensure()` falls back to a nearby
+free port (8766, …) and `tutor.docslinks` rewrites the citations to that real
+base (`docs.effective_base_url()`), so the links stay clickable no matter what
+happened to the configured port.
+
 Re-sync the rendered book cache (the corpus lives in the private twin):
 
 ```bash
 # 1. copy the fresh book render into the twin's served www/
-rsync -a --delete --exclude slides/ --exclude downloads/ \
-  ../Cours-programmation-MIASHS-2026/docs/ \
+#    (the twin corpus is the 2025 course book: Cours-programmation-MIASHS-2025,
+#    solutions kept out — the Solutions/ notebook dir is excluded below)
+rsync -a --delete \
+  --exclude slides/ --exclude downloads/ \
+  --exclude docs-resources/Notebooks/Courses/Solutions/ \
+  ../Cours-programmation-MIASHS-2025/docs/ \
   ../MIASHS-Configuration-Tutorat/www/
-# 2. rebuild the twin's sections.json (anchor line→section map)
+# 2. rebuild the twin's sections.json + regenerate the local TP pages
+#    (annexe-B subjects — not rendered by quarto — get anchored pages under
+#    www/Courses/Applications/, solutions never indexed)
 uv run python tools/build_docs_map.py
 ```
 
@@ -210,8 +225,26 @@ section whose text equals the `title:`) into the header without an anchor, so
 `build_docs_map.py` excludes it. A section missing from `sections.json` almost
 always means its source heading is `#` (demote it to `##`).
 
-Exclusions: `slides/`, `downloads/`, and deliberately **no solutions** (no
-leak of corrected exercises into the model context).
+Exclusions: `slides/`, `downloads/`, the
+`docs-resources/Notebooks/Courses/Solutions/` folder, and deliberately **no
+solutions** anywhere (no leak of corrected exercises into the model context —
+`sections.json` and `www/` never reference them, and the twin's annexe pages
+`applications.html` / `applications.llms.md` are kept solution-free). The
+annexe-TP **subjects** (`Courses/Applications/*.qmd`) come from the 2025 book
+**with their answers embedded** in quarto cells tagged `#| tags: [solution]`;
+these cells are stripped everywhere: the runner's `grep_files`/`read_lines`
+never show them to the model, and `build_docs_map.py` regenerates the local TP
+pages from the sanitized text. The strip is line-preserving (blank lines stay
+in place), so `fichier:ligne` citations and the anchor map keep working. The
+exercise *scaffolds* (`#| eval: false` cells with `…` placeholders) are kept
+verbatim — only completed answers are removed.
+
+Questions ("where does a TP subject live?") are answered through the
+synthesized anchored pages: quarto does not render the annexe-B subjects, so
+`build_docs_map.py` creates `www/Courses/Applications/<stem>.html` from the
+sanitized `.qmd` (headings → anchors, rest escaped), then indexes their anchors
+in `sections.json` — run it after every rsync, it is the step that writes those
+pages.
 
 ## 9. config.json — centralized corpus by default, optional local override
 

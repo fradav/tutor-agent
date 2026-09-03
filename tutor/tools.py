@@ -18,6 +18,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from . import config
+from .sanitize import strip_solution_cells
+
 MAX_SHOWN = 8          # nombre max de lignes montrées par grep
 MAX_LINE_CHARS = 180   # troncature par ligne
 PYTHON_TIMEOUT = 15    # secondes avant kill d'un script étudiant
@@ -40,9 +43,32 @@ def _truncate(text: str) -> str:
     return text
 
 
+def _under_corpus_root(path: str) -> bool:
+    """Vrai si ``path`` pointe une source du corpus (sous ``config.corpus_root()``).
+
+    Seules ces sources embarquent des cellules ``tags: [solution]`` à vider ;
+    les fichiers du projet ouvert de l'élève (``.py`` ou autre) ne sont jamais
+    assainis.
+    """
+    root = config.corpus_root() or ""
+    if not root:
+        return False
+    try:
+        Path(path).resolve().relative_to(Path(root).resolve())
+        return True
+    except ValueError:
+        return False
+
+
 def _read_lines(path: str) -> list[str]:
     with open(path, encoding="utf-8") as f:
-        return [line.rstrip("\n") for line in f]
+        text = f.read()
+    if path.lower().endswith(".qmd") and _under_corpus_root(path):
+        # Les sujets de TP embarquent les réponses dans des cellules
+        # ``tags: [solution]`` : le modèle ne doit jamais les voir (les lignes
+        # restent, vides, pour préserver les numéros ``fichier:ligne``).
+        text = strip_solution_cells(text)
+    return [line.rstrip("\n") for line in text.splitlines()]
 
 
 def grep_files(paths: list[str], pattern: str, max_shown: int = MAX_SHOWN):

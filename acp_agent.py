@@ -31,8 +31,10 @@ def main() -> None:
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
     # Doc locale cliquable : assure le serveur statique du book (idempotent,
-    # ne relance rien si un autre agent le sert déjà ; neutre en mode STUB).
-    docs.ensure()
+    # ne relance rien si un autre agent le sert déjà avec la bonne racine ;
+    # bascule sur un port libre si le port configuré est squatté par un autre
+    # processus — la base réelle est mémorisée pour réécrire les liens).
+    logging.getLogger(__name__).info("docs: %s", docs.ensure().get("detail"))
     try:
         asyncio.run(acp.run_agent(TutorAgent()))  # type: ignore[arg-type]  # duck-typé vs acp.Agent (voir protocol.py)
     except KeyboardInterrupt:

@@ -8,10 +8,12 @@ pour rester déterministes.
 """
 from __future__ import annotations
 
+import re
 import tempfile
 import threading
 import unittest
 import urllib.request
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from unittest import mock
@@ -109,9 +111,76 @@ class DocslinksRewriteTest(unittest.TestCase):
         got = dl.rewrite_content("cf. bidon.qmd:42.", BASE)
         self.assertEqual(got, "cf. bidon.qmd:42.")
 
+    def test_fichier_seul_donne_lien_page(self) -> None:
+        # label nu (ex. cellule de tableau) → lien de la page, sans ancre ;
+        # les backticks qui encadrent la mention sont retirés (sinon le lien se
+        # rendrait en span de code, non cliquable)
+        got = dl.rewrite_content(
+            "| 3 | `01_asynchronous.qmd` | - Write a program… |", BASE
+        )
+        self.assertEqual(
+            got,
+            f"| 3 | [01_asynchronous.qmd]({BASE}/Courses/01_asynchronous.html)"
+            " | - Write a program… |",
+        )
+
+    def test_fichier_seul_suivi_d_un_point_conserve_le_point(self) -> None:
+        got = dl.rewrite_content("cf. 01_asynchronous.qmd.", BASE)
+        self.assertEqual(
+            got,
+            f"cf. [01_asynchronous.qmd]({BASE}/Courses/01_asynchronous.html).",
+        )
+
+    def test_fichier_seul_inconnu_reste_en_clair(self) -> None:
+        got = dl.rewrite_content("Regarde bidon.qmd dans tes notes.", BASE)
+        self.assertEqual(got, "Regarde bidon.qmd dans tes notes.")
+
+    def test_fichier_seul_non_touche_si_suivi_d_un_numero(self) -> None:
+        # `nom.qmd:NN` reste géré par la citation ancrée, pas le lien de page
+        got = dl.rewrite_content("cf. 01_asynchronous.qmd:28.", BASE)
+        self.assertIn(
+            f"[01_asynchronous.qmd:28]"
+            f"({BASE}/Courses/01_asynchronous.html#exercises)",
+            got,
+        )
+        # pas de lien de page (sans ancre) en plus : la paire nom:ligne suffit
+        self.assertNotIn("01_asynchronous.html)`", got)
+
     def test_rewrite_inaltere_le_reste(self) -> None:
         got = dl.rewrite_content("Texte sans citation ici. Et puis voilà.", BASE)
         self.assertEqual(got, "Texte sans citation ici. Et puis voilà.")
+
+    def test_citation_backtick_enleve(self) -> None:
+        # `nom.qmd:NN` dans des backticks → lien cliquable, sans backticks
+        got = dl.rewrite_content("Voir `01_asynchronous.qmd:120` ici.", BASE)
+        self.assertEqual(
+            got,
+            f"Voir [01_asynchronous.qmd:120]"
+            f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
+        )
+
+    def test_fichier_seul_backtick_enleve(self) -> None:
+        got = dl.rewrite_content("cf. `01_asynchronous.qmd` quand tu veux.", BASE)
+        self.assertEqual(
+            got,
+            f"cf. [01_asynchronous.qmd]"
+            f"({BASE}/Courses/01_asynchronous.html) quand tu veux.",
+        )
+
+    def test_python_ref_backtick_enleve(self) -> None:
+        got = dl.rewrite_content("Utilise `python:asyncio` ici.", BASE)
+        self.assertIn(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
+            got,
+        )
+        self.assertNotIn("`[python:asyncio]", got)
+
+    def test_span_code_ordinaire_conserve(self) -> None:
+        # un span de code qui ne commence pas par un nom de fichier connu, ou
+        # un nom de fichier noyé dans un identifiant, reste intact (pas de
+        # retrait de backticks involontaire)
+        text = "| `print(x)` | `x01_asynchronous.qmd.y` |"
+        self.assertEqual(dl.rewrite_content(text, BASE), text)
 
 
 class DocslinksStreamingTest(unittest.TestCase):
@@ -172,9 +241,51 @@ class DocslinksStreamingTest(unittest.TestCase):
             # pas de texte perdu : les liens remplacent leurs mentions exactes
             self.assertIn("et", joined)
 
+    def test_fichier_seul_coupe_recompose(self) -> None:
+        # label nu coupé au milieu du nom → recomposé puis lié (page entière)
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["Regarde 01_asynchron", "ous.qmd dans", " tes notes."]:
+            out += rw.feed(c)
+        out += rw.finish()
+        self.assertEqual(
+            "".join(out),
+            f"Regarde [01_asynchronous.qmd]"
+            f"({BASE}/Courses/01_asynchronous.html) dans tes notes.",
+        )
+
+    def test_fichier_seul_label_de_tableau(self) -> None:
+        # la synthèse « Fichier / Ligne » séparés qui cassait la cliquabilité ;
+        # backticks retirés : le lien est cliquable
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["| 3 | `01_asynchron", "ous.qmd` | - Write a program… |"]:
+            out += rw.feed(c)
+        out += rw.finish()
+        joined = "".join(out)
+        self.assertIn(
+            f"[01_asynchronous.qmd]({BASE}/Courses/01_asynchronous.html)",
+            joined,
+        )
+        self.assertNotIn("`[01_asynchronous.qmd]", joined)
+
+    def test_citation_backtick_coupee_recomposee(self) -> None:
+        # citation dans des backticks coupée au milieu par le flux → recomposée,
+        # liée, et les backticks retirés
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["Voir `01_asynchron", "ous.qmd:1", "20` ici."]:
+            out += rw.feed(c)
+        out += rw.finish()
+        self.assertEqual(
+            "".join(out),
+            f"Voir [01_asynchronous.qmd:120]"
+            f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
+        )
+
 
 class RealSectionsJsonTest(unittest.TestCase):
-    """Passe-vite : la carte committée couvre bien les 7 fichiers du corpus."""
+    """Passe-vite : la carte committée couvre bien l'ensemble du corpus."""
 
     def test_couvre_l_ensemble_du_corpus(self) -> None:
         path = Path(config.sections_json())
@@ -183,9 +294,13 @@ class RealSectionsJsonTest(unittest.TestCase):
         with path.open(encoding="utf-8") as f:
             import json
             table = json.load(f)
+        # Les valeurs ``corpus_files`` portent parfois un sous-chemin
+        # (``Applications/<stem>.qmd``) mais la carte est indexée par basename
+        # (c'est ainsi que ``docslinks.section_url_for`` la lit).
         for fname in corpus_files:
-            self.assertIn(fname, table, f"{fname} absent de la carte")
-            self.assertIn("sections", table[fname])
+            key = Path(fname).name
+            self.assertIn(key, table, f"{fname} absent de la carte")
+            self.assertIn("sections", table[key])
 
 
 class FindPathUnitTest(unittest.TestCase):
@@ -327,6 +442,80 @@ class DocsServerTest(unittest.TestCase):
                 mock.patch.object(docs, "_probe", return_value=False):
             res = docs.ensure("127.0.0.1", 0, "/tmp/tutor-www-absent-sûr-xyz")
         self.assertEqual(res["status"], "absent")
+
+    def test_marker_identifie_nos_serveurs(self) -> None:
+        tmp = self._tmp_www()
+        server = docs.serve("127.0.0.1", 0, str(tmp))
+        port = server.server_address[1]
+        t = threading.Thread(target=server.serve_forever, daemon=True)
+        t.start()
+        try:
+            with mock.patch.object(config, "STUB", False):
+                self.assertTrue(docs._serves_marker("127.0.0.1", port))
+                self.assertEqual(
+                    docs._get_status("127.0.0.1", port, "/__tutor_docs__"), 200)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+    def test_ensure_bascule_sur_autre_port_si_port_squatte(self) -> None:
+        tmp = self._tmp_www()
+        # Un « squatteur » étranger tient un port, sans notre marqueur.
+        squatter = ThreadingHTTPServer(("127.0.0.1", 0), SimpleHTTPRequestHandler)
+        squat = squatter.server_address[1]
+        threading.Thread(target=squatter.serve_forever, daemon=True).start()
+        started: list[ThreadingHTTPServer] = []
+        orig_bind = docs._bind_server
+
+        def _spy(host: str, port: int, www: str, py: str):
+            server, used = orig_bind(host, port, www, py)
+            self.assertNotEqual(used, squat)
+            started.append(server)
+            return server, used
+
+        try:
+            with mock.patch.object(config, "STUB", False), \
+                    mock.patch.object(docs, "_bind_server", side_effect=_spy):
+                res = docs.ensure("127.0.0.1", squat, str(tmp))
+            self.assertEqual(res["status"], "ok")
+            self.assertIn("un autre processus", res["detail"])
+            m = re.search(r"http://127\.0\.0\.1:(\d+)", res["detail"])
+            self.assertIsNotNone(m)
+            want = f"http://127.0.0.1:{m.group(1)}"
+            self.assertEqual(docs.effective_base_url(), want)
+            with urllib.request.urlopen(f"{want}/index.html") as r:
+                self.assertEqual(r.read().decode(), "<h1>ok</h1>")
+            # Une seconde session réadopte le port déjà servi (aucun nouveau
+            # serveur) : effective base inchangée, pas de bind supplémentaire.
+            with mock.patch.object(config, "STUB", False), \
+                    mock.patch.object(docs, "_bind_server", side_effect=_spy):
+                res2 = docs.ensure("127.0.0.1", squat, str(tmp))
+            self.assertEqual(docs.effective_base_url(), want)
+            self.assertIn("un autre processus", res2["detail"])
+            self.assertEqual(len(started), 1)
+        finally:
+            docs._set_effective_base()
+            squatter.shutdown()
+            squatter.server_close()
+            for s in started:
+                s.shutdown()
+                s.server_close()
+
+    def test_ensure_reste_idempotent_si_notre_serveur_a_bonne_racine(self) -> None:
+        # Même port, notre serveur, bonne racine → pas de relance, base = config.
+        tmp = self._tmp_www()
+        server = docs.serve("127.0.0.1", 0, str(tmp))
+        port = server.server_address[1]
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        try:
+            with mock.patch.object(config, "STUB", False):
+                res = docs.ensure("127.0.0.1", port, str(tmp))
+            self.assertEqual(res["status"], "ok")
+            self.assertIn("déjà servies", res["detail"])
+            self.assertEqual(docs.effective_base_url(), config.docs_base_url())
+        finally:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

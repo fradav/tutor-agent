@@ -7,9 +7,19 @@ transforme ces mentions en liens cliquables :
 
 - ``nom.qmd:ligne`` → ``[nom.qmd:ligne](BASE/chemin.html#ancre)`` — book
   servi en local par ``tutor.docs`` (cartes ``corpus/sections.json``) ;
+- ``nom.qmd`` **seul** (label nu — cellule de tableau, prose sans ligne) →
+  ``[nom.qmd](BASE/chemin.html)`` — lien de la page entière : tout fichier
+  connu du corpus reste cliquable même quand le modèle ne reproduit pas
+  l'adjacence ``nom:ligne`` (vue synthèse) ;
 - ``python:<mod>`` → ``[python:<mod>](BASE/py/library/<mod>.html)`` (ou
   ``https://docs.python.org/3/library/<mod>.html`` sans miroir local) — la
-  base est ``config.python_doc_base_url()``.
+  base est ``docs.effective_base_url()`` (port réel du serveur, repli inclus).
+- des backticks `` ` `` qui encadrent directement une mention sont retirés :
+  sinon le lien se rendrait en span de code (non cliquable).
+
+La base du book est ``tutor.docs.effective_base_url()`` : le port configuré,
+ou le port de repli quand ``ensure()`` a dû se relancer ailleurs (port squatté
+par un autre processus).
 
 La réécriture est **déterministe** et appliquée côté moteur (engine) sur le
 contenu visible du tour (``kind == "content"``) — les modèles n'ont pas à
@@ -35,30 +45,42 @@ import os
 import re
 from typing import Any
 
-from . import config
+from . import config, docs
 
 # Un motif de citation : `nom.qmd:ligne` (l'extension ``.qmd`` fait partie du
 # groupe = clé de la carte). Frontière gauche = pas un caractère de « nom de
 # fichier » (sinon on réécrirait au milieu d'un identifiant) ; frontière droite
-# = pas un chiffre (pour ne pas avaler `1200` en citant :120).
+# = pas un chiffre (pour ne pas avaler `1200` en citant :120). Un wrapper de
+# backticks `` ` `` directement autour de la mention (groupe 1, facultatif) est
+# avalé puis retiré dans ``_rewrite`` : sinon le lien se rendrait en span de
+# code non cliquable dans la réponse du modèle.
 _CITE_RE = re.compile(
+    r"(?P<ouvr>`{0,2})"
     r"(?<![A-Za-z0-9_.\-])([A-Za-z0-9_][A-Za-z0-9_.\-]*\.qmd):(\d+)(?![0-9])"
+    r"(?P=ouvr)"
 )
 
 # Une citation de doc Python : `python:<ref>` où `<ref>` = module
 # (`asyncio`, `queue`) ou module#ancre (`queue#SimpleQueue`). Frontière =
 # pas un caractère de nom — ne pas avaler `python:` suivi d'un mot courant.
+# Même wrapper de backticks facultatif que ``_CITE_RE`` (retiré à la réécriture).
 _PY_REF_RE = re.compile(
-    r"(?<![A-Za-z0-9_])python:([A-Za-z_][A-Za-z0-9_.]*(?:#[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9#_])"
+    r"(?P<ouvr>`{0,2})"
+    r"(?<![A-Za-z0-9_])python:([A-Za-z_][A-Za-z0-9_.]*(?:#[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9#_])(?P=ouvr)"
 )
 
 # Suffixe de fin de chunk qui peut être un début de citation coupé en deux :
 # on retient tout suffixe susceptible de devenir `*.qmd`, `*.qmd:`, `*.qmd:1`…
 # ou `python:`, `python:asynci`, `python:queue#…` pour ne pas casser un lien
-# dont la suite arrive dans le chunk suivant.
+# dont la suite arrive dans le chunk suivant. Dernière branche : toute fin de
+# mot/caractère de nom (`[A-Za-z0-9_.\-]+`) est retenue pour qu'un nom de
+# fichier nu (`01_asynchron` + `ous.qmd`) coupé entre deux chunks soit recomposé
+# avant réécriture. Le backtick (`` ` ``) autorisé en tête des deux premières
+# branches permet de recomposer aussi un nom coupé à l'intérieur de backticks.
 _TAIL_RE = re.compile(
-    r"(?:[A-Za-z0-9_.\-]*\.qmd:?\d*"
-    r"|python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?)$"
+    r"(?:`{0,2}[A-Za-z0-9_.\-]*\.qmd:?\d*"  # recoupe ``01_asynchron`` → `01_asynchronous.qmd:12`
+    r"|`{0,2}python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?"
+    r"|[A-Za-z0-9_.\-`]+)$"
 )
 
 # Borne haute d'un suffixe retenu : au-delà, ce n'est pas un nom de fichier
@@ -67,6 +89,12 @@ _MAX_TAIL = 80
 
 # Chargé paresseusement (une seule lecture de sections.json par process).
 _SECTIONS: dict[str, Any] | None = None
+
+# Regex des mentions « nues » d'un fichier connu du corpus (label sans ligne),
+# construite paresseusement depuis la carte : `01_asynchronous.qmd` → lien de
+# page. Seuls les noms connus sont reconnus (jamais de lien vers un fichier
+# inconnu) ; un `nom.qmd` suivi de `:chiffres` est laissé à `_CITE_RE`.
+_FILENAMES_RE: tuple[tuple[str, ...], re.Pattern | None] = ((), None)
 
 
 def _load_sections() -> dict[str, Any]:
@@ -97,10 +125,40 @@ def sections_table() -> dict[str, Any]:
     return _SECTIONS
 
 
+def _basenames() -> tuple[str, ...]:
+    """Noms de fichiers connus du corpus (basenames, du plus long au plus
+    court pour que l'alternance matche le nom complet d'abord)."""
+    return tuple(sorted({os.path.basename(f) for f in sections_table()},
+                        key=len, reverse=True))
+
+
+def _filename_re() -> re.Pattern | None:
+    """Motif des fichiers du corpus cités **sans** ligne (label nu).
+
+    Facade arrière ``[a-z0-9_.-]`` (pas au milieu d'un identifiant) et devant
+    rien qui prolonge un nom (`a-z0-9_-:`) — une mention ``nom.qmd:NN`` reste
+    gérée par ``_CITE_RE``. Un ``.`` final (fin de phrase) est autorisé.
+    """
+    global _FILENAMES_RE
+    names = _basenames()
+    if names == _FILENAMES_RE[0]:
+        return _FILENAMES_RE[1]
+    pattern = None
+    if names:
+        pattern = re.compile(
+            r"(?P<ouvr>`{0,2})(?<![A-Za-z0-9_.\-])("
+            + "|".join(re.escape(n) for n in names)
+            + r")(?![A-Za-z0-9_\-:])(?P=ouvr)"
+        )
+    _FILENAMES_RE = (names, pattern)
+    return pattern
+
+
 def reset_for_tests() -> None:
-    """Vide le cache de la carte (utile aux tests)."""
-    global _SECTIONS
+    """Vide les caches (carte et regex des noms — utile aux tests)."""
+    global _SECTIONS, _FILENAMES_RE
     _SECTIONS = None
+    _FILENAMES_RE = ((), None)
 
 
 def section_url_for(fname: str, line: int, base_url: str | None = None) -> str | None:
@@ -111,7 +169,7 @@ def section_url_for(fname: str, line: int, base_url: str | None = None) -> str |
     URL de la page sans ancre. Fichier inconnu → ``None`` (pas de lien).
     """
     if base_url is None:
-        base_url = config.docs_base_url()
+        base_url = docs.effective_base_url()
     if "/" in fname:
         fname = os.path.basename(fname)
     entry = sections_table().get(fname)
@@ -125,27 +183,52 @@ def section_url_for(fname: str, line: int, base_url: str | None = None) -> str |
     return url
 
 
+def _python_base_url() -> str:
+    """Base des citations ``python:<ref>`` : miroir local ``/py`` quand
+    ``docs.py_dir`` est posé (port réel du serveur docs, y compris repli), sinon
+    https://docs.python.org/3/ (en ligne)."""
+    if config.py_dir():
+        return f"{docs.effective_base_url().rstrip('/')}/py"
+    return config.python_doc_base_url()
+
+
 def _python_url(ref: str) -> str:
     """URL de la doc Python pour une citation ``python:<ref>``.
 
-    Base = ``config.python_doc_base_url()`` : miroir local ``BASE/py`` quand
+    Base = ``_python_base_url()`` : miroir local ``BASE/py`` quand
     ``docs.py_dir`` est posé, sinon https://docs.python.org/3/ (en ligne).
     ``python:queue#SimpleQueue`` → ``<base>/library/queue.html#SimpleQueue``.
     """
     mod, _, anchor = ref.partition("#")
-    url = f"{config.python_doc_base_url().rstrip('/')}/library/{mod}.html"
+    url = f"{_python_base_url().rstrip('/')}/library/{mod}.html"
     return f"{url}#{anchor}" if anchor else url
 
 
 def _rewrite(text: str, base_url: str) -> str:
     def _repl(m: re.Match) -> str:
-        url = section_url_for(m.group(1), int(m.group(2)), base_url)
-        return f"[{m.group(1)}:{m.group(2)}]({url})" if url else m.group(0)
+        # groupe 1 = wrapper de backticks facultatif (voir ``_CITE_RE``) : on le
+        # laisse tomber pour que le lien se rende cliquable, pas en span de code.
+        url = section_url_for(m.group(2), int(m.group(3)), base_url)
+        return f"[{m.group(2)}:{m.group(3)}]({url})" if url else m.group(0)
 
     text = _CITE_RE.sub(_repl, text)
 
+    # label nu (fichier connu sans ligne) → lien de la page : ligne 0 → jamais
+    # d'ancre (page complète). Couvre les synthèses du modèle qui séparent le
+    # nom du numéro de ligne (tableaux, `**Fichier :** …`) — le label reste
+    # alors cliquable, on perd seulement la précision de l'ancre.
+    fname_re = _filename_re()
+    if fname_re:
+        def _fname_repl(m: re.Match) -> str:
+            # groupe 1 = wrapper de backticks facultatif (voir ``_filename_re``).
+            url = section_url_for(m.group(2), 0, base_url)
+            return f"[{m.group(2)}]({url})" if url else m.group(0)
+
+        text = fname_re.sub(_fname_repl, text)
+
     def _pyrepl(m: re.Match) -> str:
-        return f"[python:{m.group(1)}]({_python_url(m.group(1))})"
+        # groupe 1 = wrapper de backticks facultatif (voir ``_PY_REF_RE``).
+        return f"[python:{m.group(2)}]({_python_url(m.group(2))})"
 
     return _PY_REF_RE.sub(_pyrepl, text)
 
@@ -154,7 +237,7 @@ def rewrite_content(text: str, base_url: str | None = None) -> str:
     """Réécrit les mentions ``fichier:ligne`` connues et ``python:<ref>`` d'un
     texte complet (base ``base_url`` pour le book, base Python indépendante)."""
     if base_url is None:
-        base_url = config.docs_base_url()
+        base_url = docs.effective_base_url()
     if not base_url or not text:
         return text
     return _rewrite(text, base_url)
@@ -171,7 +254,8 @@ class LinkRewriter:
     """
 
     def __init__(self, base_url: str | None = None) -> None:
-        self.base_url = base_url if base_url is not None else config.docs_base_url()
+        self.base_url = (base_url if base_url is not None
+                         else docs.effective_base_url())
         self.pending = ""
 
     def feed(self, chunk: str) -> list[str]:

@@ -235,6 +235,59 @@ def _build_sections(src_text: str, html_text: str) -> tuple[list[dict], int, int
     return sections, len(anchors), len(anchors) - used, skipped
 
 
+# Les pages servies ``applications.html`` / ``applications.llms.md`` proviennent
+# du rendu upstream (rsync), où le tableau des TP pointe vers
+# ``docs-resources/Notebooks/Courses/Applications/…``. Le jumeau ne sert jamais
+# cet arbre (exclu du rsync) : les TP sont servis sous ``Courses/Applications/``
+# (copiés par ce script). On réécrit donc les liens du tableau après chaque
+# rsync pour qu'ils résolvent, puis on aligne la colonne « Html » du .llms.md
+# (``*.llms.md`` n'existe pas pour les TP → ``*.html``). Opération idempotente :
+# sans rsync préalable, les liens sont déjà réécrits et elle ne touche à rien.
+NOTEBOOKS_APPS_PREFIX = "docs-resources/Notebooks/Courses/Applications/"
+LOCAL_APPS_PREFIX = "Courses/Applications/"
+
+
+def _rewrite_applications_links(www: Path) -> None:
+    """Réécrit les liens du tableau des TP dans les pages annexes servies."""
+    for name in ("applications.html", "applications.llms.md"):
+        page = www / name
+        if not page.exists():
+            continue
+        text = page.read_text(encoding="utf-8")
+        text = text.replace(NOTEBOOKS_APPS_PREFIX, LOCAL_APPS_PREFIX)
+        if name.endswith(".llms.md"):
+            # Colonne « Html » : ``<stem>.llms.md`` n'existe pas pour les TP
+            # (le jumeau sert ``<stem>.html``), on aligne sur le .html servi.
+            text = re.sub(rf"({re.escape(LOCAL_APPS_PREFIX)}[\w-]+)\.llms\.md",
+                          r"\1.html", text)
+        page.write_text(text, encoding="utf-8")
+        print(f"  {name}: liens Applications réécrits vers {LOCAL_APPS_PREFIX}")
+
+
+def _copy_tp_fig_assets(book: Path, www: Path) -> None:
+    """Copie vers ``www/Courses/figs/`` les figures ``../figs/…`` référencées
+    par les TP servis et absentes localement. Les TP rendus sont produits dans
+    ``docs/docs-resources/Notebooks/Courses/figs/`` (arbre non synchronisé) ;
+    leurs chemins relatifs ``../figs/`` se résolvent pourtant dans
+    ``Courses/figs/`` une fois servis depuis ``Courses/Applications/``."""
+    apps_render = (book / "docs" / "docs-resources" / "Notebooks"
+                   / "Courses" / "Applications")
+    figs_src = apps_render.parent / "figs"
+    figs_dst = www / "Courses" / "figs"
+    refs: set[str] = set()
+    for page in sorted((www / "Courses" / "Applications").glob("*.html")):
+        for m in re.finditer(r"\.\./figs/([\w.\-]+)",
+                             page.read_text(encoding="utf-8")):
+            refs.add(m.group(1))
+    for name in sorted(refs):
+        src = figs_src / name
+        dst = figs_dst / name
+        if src.is_file() and not dst.exists():
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            dst.write_bytes(src.read_bytes())
+            print(f"  {rel}: figure TP copiée dans {dst.relative_to(www)}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--book", type=Path, default=DEFAULT_BOOK,
@@ -318,6 +371,13 @@ def main() -> int:
     args.out.write_text(json.dumps(table, ensure_ascii=False, indent=1) + "\n",
                         encoding="utf-8")
     print(f"écrit {args.out.resolve()} ({len(table)} fichiers)")
+
+    # Post-traitement des pages annexes servies : les liens du tableau des TP
+    # pointent (côté upstream) vers l'arbre notebooks non synchronisé — on les
+    # réécrit vers ``Courses/Applications/``, puis on comble les figures ``../figs/``
+    # manquantes des pages TP servies.
+    _rewrite_applications_links(args.www)
+    _copy_tp_fig_assets(book, args.www)
     print(f"{total} sections indexées · {total_unused} ancres HTML non mappées")
     sample = {f: [(s["line"], s["slug"]) for s in table[f]["sections"][:3]]
               for f in ["01_Code-Assistant.qmd", "02_Parallel-intro.qmd",

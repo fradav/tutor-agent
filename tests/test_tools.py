@@ -314,6 +314,45 @@ class DocslinksStreamingTest(unittest.TestCase):
             f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
         )
 
+    def test_citation_backtick_fermee_en_fin_de_flux(self) -> None:
+        # RÉGRESSION « les liens ne sont pas là » : une citation backtickée peut
+        # se trouver à la TOUTE fin du flux, fermeture de backticks comprise dans
+        # le dernier morceau. Le buffer doit l'avaler ENTIÈRE — sinon ``python:``
+        # partait en clair dans le morceau sûr et ``asyncio` `` restait en attente
+        # (jamais ré-écrit ensuite) : symptôme exact du transcript réel.
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["Doc Python : `python:asyncio`"]:
+            out += rw.feed(c)
+        out += rw.finish()
+        joined = "".join(out)
+        self.assertIn(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
+            joined,
+        )
+        # rien ne doit subsister en clair (ni backticks scindés, ni ``python:`` nu)
+        self.assertNotIn("`python:", joined)
+        self.assertNotIn("asyncio`", joined)
+
+    def test_citation_backtick_fermee_en_fin_flux_apres_autre_citation(self) -> None:
+        # variante : la citation backtickée fermée en fin de flux suit une autre
+        # citation déjà retenue dans le buffer — les deux doivent être liées
+        rw = dl.LinkRewriter(BASE)
+        out: list[str] = []
+        for c in ["Voir `python:asyncio` puis ", "`01_asynchronous.qmd:120`"]:
+            out += rw.feed(c)
+        out += rw.finish()
+        joined = "".join(out)
+        self.assertIn(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
+            joined,
+        )
+        self.assertIn(
+            f"[01_asynchronous.qmd:120]"
+            f"({BASE}/Courses/01_asynchronous.html#exercises)",
+            joined,
+        )
+
     def test_chemin_prefixe_coupe_recompose(self) -> None:
         # chemin de dossier coupé entre deux chunks (par le `Applications/` et au
         # milieu du nom) → recomposé, lié avec le préfixe, backticks retirés

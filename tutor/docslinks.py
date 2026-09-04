@@ -72,10 +72,13 @@ _CITE_RE = re.compile(
 # Une citation de doc Python : `python:<ref>` où `<ref>` = module
 # (`asyncio`, `queue`) ou module#ancre (`queue#SimpleQueue`). Frontière =
 # pas un caractère de nom — ne pas avaler `python:` suivi d'un mot courant.
+# Un point n'est autorisé qu'ENTRE deux portions d'identifiant
+# (`asyncio.base_events`) : un `.` final de phrase (`python:asyncio.`) ne doit
+# pas finir dans le lien (sinon URL `asyncio..html` → 404 → lien mort).
 # Même wrapper de backticks facultatif que ``_CITE_RE`` (retiré à la réécriture).
 _PY_REF_RE = re.compile(
     r"(?P<ouvr>`{0,2})"
-    r"(?<![A-Za-z0-9_])python:([A-Za-z_][A-Za-z0-9_.]*(?:#[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9#_])(?P=ouvr)"
+    r"(?<![A-Za-z0-9_])python:([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z0-9_]+)*(?:#[A-Za-z0-9_.-]+)?)(?![A-Za-z0-9#_])(?P=ouvr)"
 )
 
 # Suffixe de fin de chunk qui peut être un début de citation coupé en deux :
@@ -88,10 +91,16 @@ _PY_REF_RE = re.compile(
 # branches permet de recomposer aussi un nom coupé à l'intérieur de backticks.
 # Le ``/`` et le ``.`` des classes couvrent aussi un préfixe de chemin
 # (`Applications/03_0_Asynchronous`) coupé entre deux chunks : le chemin entier
-# est retenu en attente pour être recomposé avant réécriture.
+# est retenu en attente pour être recomposé avant réécriture. Un backtick de
+# FERMETURE (`` `{0,2} `` en fin des deux premières branches) est avalé aussi :
+# une citation backtickée en toute fin de contenu (`Voir ``python:asyncio```,
+# ```03_0_Asynchronous.qmd:1007``` en fin de réponse) doit rester entière dans le
+# buffer, sinon ``python:``/``.qmd:`` serait écrit et ``asyncio` ``/``1007` ``
+# finirait en attente — le lien ne serait jamais re-réécrit (symptôme
+# « les liens ne sont pas là »).
 _TAIL_RE = re.compile(
-    r"(?:`{0,2}[A-Za-z0-9_.\-/]*\.qmd:?\d*"  # recoupe ``01_asynchron`` → `01_asynchronous.qmd:12`
-    r"|`{0,2}python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?"
+    r"(?:`{0,2}[A-Za-z0-9_.\-/]*\.qmd:?\d*`{0,2}"  # recoupe ``01_asynchron`` → `01_asynchronous.qmd:12`
+    r"|`{0,2}python:[A-Za-z0-9_.\-]*(?:#[A-Za-z0-9_.\-]*)?`{0,2}"
     r"|[A-Za-z0-9_.\-/`]+)$"
 )
 

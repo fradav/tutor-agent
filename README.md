@@ -313,9 +313,10 @@ TUTOR_STUB=1 uv run python -m unittest tests/test_protocol.py -v
 # llm (remote fallback auth: endpoint + API key, mocked urlopen) — offline
 uv run python -m unittest tests/test_llm.py -v
 
-# everything (129 tests): test_server pure, test_protocol & test_runner_features
-# in STUB, test_tools with real contents (sections.json + localhost server on
-# the twin www/ as resolved by config), test_llm offline (mocked urlopen),
+# everything (tests): test_server pure, test_protocol & test_runner_features in
+# STUB, test_tools with real contents (sections.json + localhost server on the
+# twin www/ as resolved by config), test_links_browser (served clickable links,
+# STUB bypassed via a mocked backend), test_llm offline (mocked urlopen),
 # test_sanitize (incl. the :::solution-div and "Solution…"-heading strip)
 TUTOR_STUB=1 uv run python -m unittest discover -s tests -v
 ```
@@ -327,6 +328,13 @@ and the Ask-parity tools `find_path` (project glob + noise-dir exclusion +
 absolute / `..` refusal) and `diagnostics` (single file, whole project, .qmd
 rejected). `test_tools` adds direct unit coverage for `find_paths` (corpus key /
 glob / substring / pagination) and `py_syntax_errors` (good, bad, NUL, missing).
+
+`test_links_browser` simulates a student turn with a mocked backend (STUB
+bypassed) so the engine's real citation→markdown rewriting runs; a live docs
+server (twin `www/` + a temp Python mirror under `/py/`) serves the targets, and
+every link in the returned content is fetched and asserted HTTP 200 (clickable
+& viewable in a browser), with the expected anchors checked in the served HTML.
+It also exercises the streaming recomposition of a citation cut across chunks.
 
 ## 11. Why an ACP agent? (and why not Zed + Ask + erased prompt)
 

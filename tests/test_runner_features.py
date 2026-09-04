@@ -340,6 +340,23 @@ class PythonCiteRewriteTest(unittest.TestCase):
             )
         self.assertNotIn("](http", got)
 
+    def test_trailing_period_stays_out_of_link(self) -> None:
+        """Un ``.`` de fin de phrase ne doit pas finir dans l'URL du module
+        (sinon ``asyncio..html`` → 404 → lien mort en plein énoncé)."""
+        with mock.patch.object(
+            config, "python_doc_base_url",
+            return_value="https://docs.python.org/3/",
+        ):
+            got = dl.rewrite_content(
+                "La boucle est documentée dans python:asyncio.",
+                "http://127.0.0.1:8765",
+            )
+        self.assertIn(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
+            got,
+        )
+        self.assertNotIn("asyncio..html", got)
+
     def test_streaming_cut_recomposed(self) -> None:
         with mock.patch.object(
             config, "python_doc_base_url",

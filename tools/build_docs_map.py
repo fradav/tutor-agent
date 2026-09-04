@@ -264,28 +264,33 @@ def _rewrite_applications_links(www: Path) -> None:
         print(f"  {name}: liens Applications réécrits vers {LOCAL_APPS_PREFIX}")
 
 
-def _copy_tp_fig_assets(book: Path, www: Path) -> None:
-    """Copie vers ``www/Courses/figs/`` les figures ``../figs/…`` référencées
-    par les TP servis et absentes localement. Les TP rendus sont produits dans
-    ``docs/docs-resources/Notebooks/Courses/figs/`` (arbre non synchronisé) ;
-    leurs chemins relatifs ``../figs/`` se résolvent pourtant dans
-    ``Courses/figs/`` une fois servis depuis ``Courses/Applications/``."""
-    apps_render = (book / "docs" / "docs-resources" / "Notebooks"
-                   / "Courses" / "Applications")
-    figs_src = apps_render.parent / "figs"
-    figs_dst = www / "Courses" / "figs"
-    refs: set[str] = set()
+# Images référencées en relatif ``../<dossier>/<fichier>`` par les pages TP
+# servies (figs/, tikz-figures/, …). Côté upstream (rendu notebooks) le ``../``
+# pointe vers ``docs-resources/Notebooks/Courses/<dossier>/`` ; servi depuis
+# ``Courses/Applications/<stem>.html`` il pointe vers ``Courses/<dossier>/``.
+# On copie donc à cet endroit (idempotent) les images référencées et absentes.
+_TP_IMAGE_REF_RE = re.compile(
+    r"\.\./([\w-]+)/([\w.\-]+\.(?:png|jpe?g|gif|svg|webp))")
+
+
+def _copy_tp_image_assets(book: Path, www: Path) -> None:
+    """Copie vers ``www/Courses/<dossier>/`` les images ``../<dossier>/…``
+    référencées par les pages TP servies et absentes localement. Source : le
+    rendu notebooks upstream (``docs/docs-resources/Notebooks/Courses/``)."""
+    render_root = book / "docs" / "docs-resources" / "Notebooks" / "Courses"
+    refs: set[tuple[str, str]] = set()
     for page in sorted((www / "Courses" / "Applications").glob("*.html")):
-        for m in re.finditer(r"\.\./figs/([\w.\-]+)",
-                             page.read_text(encoding="utf-8")):
-            refs.add(m.group(1))
-    for name in sorted(refs):
-        src = figs_src / name
-        dst = figs_dst / name
+        for subdir, name in re.findall(
+                _TP_IMAGE_REF_RE, page.read_text(encoding="utf-8")):
+            refs.add((subdir, name))
+    for subdir, name in sorted(refs):
+        src = render_root / subdir / name
+        dst = www / "Courses" / subdir / name
         if src.is_file() and not dst.exists():
             dst.parent.mkdir(parents=True, exist_ok=True)
             dst.write_bytes(src.read_bytes())
-            print(f"  {rel}: figure TP copiée dans {dst.relative_to(www)}")
+            print(f"  {dst.relative_to(www)}: image TP copiée depuis "
+                  f"{src.relative_to(book)}")
 
 
 def main() -> int:
@@ -374,10 +379,10 @@ def main() -> int:
 
     # Post-traitement des pages annexes servies : les liens du tableau des TP
     # pointent (côté upstream) vers l'arbre notebooks non synchronisé — on les
-    # réécrit vers ``Courses/Applications/``, puis on comble les figures ``../figs/``
-    # manquantes des pages TP servies.
+    # réécrit vers ``Courses/Applications/``, puis on comble les images
+    # ``../<dossier>/`` manquantes des pages TP servies.
     _rewrite_applications_links(args.www)
-    _copy_tp_fig_assets(book, args.www)
+    _copy_tp_image_assets(book, args.www)
     print(f"{total} sections indexées · {total_unused} ancres HTML non mappées")
     sample = {f: [(s["line"], s["slug"]) for s in table[f]["sections"][:3]]
               for f in ["01_Code-Assistant.qmd", "02_Parallel-intro.qmd",

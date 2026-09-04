@@ -72,6 +72,9 @@ class StudentLinksClickableTest(unittest.TestCase):
         www = config.www_dir()
         self.assertTrue(Path(www).is_dir(),
                         f"www du jumeau absent : {www} — impossible de tester les liens")
+        # Reset la base effective pour éviter les effets de bord entre tests
+        # (un test précédent peut avoir appelé docs._set_effective_base()).
+        docs._set_effective_base()
         # Miroir Python temporaire (le jumeau n'en embarque pas) : servi sous
         # ``/py/``, c'est la cible des citations ``python:asyncio`` hors-ligne.
         self._py_tmp = tempfile.TemporaryDirectory(prefix="tutor-pydoc-")
@@ -85,6 +88,9 @@ class StudentLinksClickableTest(unittest.TestCase):
         self.port = self.server.server_address[1]
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
         self.base = f"http://127.0.0.1:{self.port}"
+        # Base effective : le serveur de test tourne sur un port éphémère.
+        # docs._set_effective_base() est appelé ici ET dans initial_state()
+        # (via docs.ensure()) — les deux appels sont idempotents.
         docs._set_effective_base(self.base)
 
     def tearDown(self) -> None:
@@ -193,6 +199,75 @@ class StudentLinksClickableTest(unittest.TestCase):
             "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
             got,
         )
+
+    def test_system_prompt_contains_correct_base_url(self) -> None:
+        """Le prompt système contient la base URL effective (port réel),
+        pas le port par défaut 8765 — le modèle génère ainsi des liens
+        qui pointent vers le bon serveur."""
+        # Simuler l'environnement de test (serveur docs + base effective)
+        # sans lancer un tour complet.
+        with mock.patch.object(config, "STUB", False), \
+                mock.patch.object(config, "py_dir",
+                                  return_value=str(Path(self._py_tmp.name))):
+            from tutor import engine as engine_mod
+            # docs.ensure() sera appelé dans initial_state() et mettra
+            # _effective_base_url à jour (port dynamique du test)
+            state = engine_mod.initial_state(
+                model="qwen3.5-4B", session_id="t-base-url", label="base-url", cwd="")
+        system_content = state["messages"][0]["content"]
+        # La base URL du prompt doit être celle du test (port dynamique)
+        self.assertIn(f"Base URL du book : **{self.base}**", system_content,
+                      "Le prompt système doit contenir la base URL effective")
+        # Pas de port par défaut 8765 dans les exemples de liens
+        self.assertNotIn("http://127.0.0.1:8765", system_content,
+                         "Le prompt ne doit pas contenir le port par défaut 8765")
+
+    def test_all_link_types_clickable(self) -> None:
+        """Le modèle produit des liens vers 3 types de ressources :
+        cours (Courses/), TP (Courses/Applications/), doc Python.
+        Tous doivent être cliquables (HTTP 200) et visibles."""
+        content = (
+            "Voici les références pour asyncio :\n\n"
+            "**Cours** : [Programmation asynchrone]({base}/Courses/03_Asynchronous.html)\n\n"
+            "**TP** : [TP Asynchrone]({base}/Courses/Applications/03_0_Asynchronous.html)\n\n"
+            "**Doc Python** : [python:asyncio](https://docs.python.org/3/library/asyncio.html)"
+        ).format(base=self.base)
+        turn = self._run_turn_with((content,))
+        result = turn["content"]
+        # Extraire tous les liens du résultat
+        links = self._links_in(result)
+        # On doit avoir au moins 3 liens (cours + TP + Python)
+        self.assertGreaterEqual(len(links), 3,
+                                f"attendu ≥3 liens, obtenu {len(links)} : {links}")
+        # Vérifier que chaque lien est cliquable
+        for url in links:
+            body = self._assert_clickable(url)
+            self._assert_anchor_present(url, body)
+
+    def test_course_vs_tp_distinction(self) -> None:
+        """Le modèle distingue cours (Courses/) de TP (Courses/Applications/).
+        Les liens de cours ne doivent pas pointer vers Applications/."""
+        content = (
+            "**Cours** : [Programmation asynchrone]({base}/Courses/03_Asynchronous.html)\n\n"
+            "**TP** : [TP Asynchrone]({base}/Courses/Applications/03_0_Asynchronous.html)"
+        ).format(base=self.base)
+        turn = self._run_turn_with((content,))
+        result = turn["content"]
+        # Le lien du cours doit pointer vers Courses/ (pas Applications/)
+        self.assertIn(f"{self.base}/Courses/03_Asynchronous.html", result)
+        # Le lien du TP doit pointer vers Courses/Applications/
+        self.assertIn(f"{self.base}/Courses/Applications/03_0_Asynchronous.html", result)
+        # Pas de lien imbriqué ni de syntaxe wiki
+        self.assertNotIn("[[", result)
+        # Compter les occurrences de chaque type
+        course_links = re.findall(
+            rf"\[.*?\]\({re.escape(self.base)}/Courses/[^A][^/]*\.html\)", result)
+        tp_links = re.findall(
+            rf"\[.*?\]\({re.escape(self.base)}/Courses/Applications/.*\.html\)", result)
+        self.assertGreaterEqual(len(course_links), 1,
+                                "Au moins un lien vers un cours attendu")
+        self.assertGreaterEqual(len(tp_links), 1,
+                                "Au moins un lien vers un TP attendu")
 
 
 if __name__ == "__main__":

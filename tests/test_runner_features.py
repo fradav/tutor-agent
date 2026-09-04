@@ -37,18 +37,35 @@ class BuildSystemAgentsTest(unittest.TestCase):
     """AGENTS.<model>.md takes precedence over AGENTS.md; none → Références only.
 
     ``build_system()`` préfixe toujours un bloc « Références » (base URL du book,
-    instructions liens natifs) au contenu AGENTS. En mode STUB, la base URL est
-    ``http://127.0.0.1:8765``.
+    instructions liens natifs) au contenu AGENTS. La base URL est la valeur
+    effective (port par défaut 8765, ou port de repli si le serveur est
+    relancé sur un autre port).
     """
     MD = "# AGENTS\n\nTeach me socratically."
-    _REFS_PREFIX = "## Références\n- Base URL du book : **http://127.0.0.1:8765**"
+
+    def _refs_prefix(self) -> str:
+        """Bloc Références avec la base URL effective (dynamique)."""
+        from tutor import docs
+        base = docs.effective_base_url().rstrip("/")
+        return (
+            "## Références\n"
+            f"- Base URL du book : **{base}**\n"
+            "- Cours : `[nom](BASE_URL/Courses/nom.html)`\n"
+            "- TP / applications : `[nom](BASE_URL/Courses/Applications/nom.html)`\n"
+            "- Doc Python : `[python:module](https://docs.python.org/3/library/module.html)`\n"
+            "- Écris les liens en markdown natif `[texte](url)` — ne réécris jamais "
+            "un lien existant dans `[...]([...]url...)](url)` ni utilise la syntaxe "
+            "wiki `[[...]]`.\n"
+            "- Si tu ne connais pas l'ancre HTML exacte, un lien vers la page est "
+            "suffisant.\n"
+        )
 
     def test_agents_md_alone(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _write_tree(Path(tmp), {"AGENTS.md": self.MD})
             got = config.build_system("qwen3.5-4B", tmp)
             self.assertIn(self.MD.strip(), got)
-            self.assertIn(self._REFS_PREFIX, got)
+            self.assertIn(self._refs_prefix(), got)
 
     def test_model_variant_wins_over_plain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -59,7 +76,7 @@ class BuildSystemAgentsTest(unittest.TestCase):
             got = config.build_system("qwen3.5-4B", tmp)
             self.assertIn("variant", got)
             self.assertNotIn("plain", got)
-            self.assertIn(self._REFS_PREFIX, got)
+            self.assertIn(self._refs_prefix(), got)
 
     def test_other_model_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -70,17 +87,17 @@ class BuildSystemAgentsTest(unittest.TestCase):
             got = config.build_system("qwen3.5-4B", tmp)
             self.assertIn("plain", got)
             self.assertNotIn("variant", got)
-            self.assertIn(self._REFS_PREFIX, got)
+            self.assertIn(self._refs_prefix(), got)
 
     def test_none_returns_refs_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             got = config.build_system("qwen3.5-4B", tmp)
-            self.assertIn(self._REFS_PREFIX, got)
+            self.assertIn(self._refs_prefix(), got)
             self.assertNotIn("AGENTS", got)
 
     def test_empty_cwd_returns_refs_only(self) -> None:
         got = config.build_system("qwen3.5-4B", "")
-        self.assertIn(self._REFS_PREFIX, got)
+        self.assertIn(self._refs_prefix(), got)
 
     def test_initial_state_loads_agents_from_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -97,7 +114,7 @@ class BuildSystemAgentsTest(unittest.TestCase):
             self.assertEqual(messages[0]["role"], "system")
             content = messages[0]["content"]
             self.assertIn("variant-socratic", content)
-            self.assertIn(self._REFS_PREFIX, content)
+            self.assertIn(self._refs_prefix(), content)
 
 
 class ProjectToolPathsTest(unittest.TestCase):

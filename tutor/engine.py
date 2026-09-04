@@ -41,7 +41,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import config
+from . import config, docs
 from .docslinks import rewrite_content
 from .llm import stream_complete
 from .tools import (
@@ -421,6 +421,15 @@ def initial_state(
     """
     prof = config.profile(model)
     no_system_embed = config.embeds_instructions(model)
+    # S'assurer que le serveur docs est lancé et que la base effective
+    # (_effective_base_url) est à jour AVANT de construire le prompt système :
+    # build_system() lit book_base_url() → effective_base_url() pour injecter
+    # la bonne URL dans le prompt, sinon le modèle génère des liens avec le
+    # port par défaut (8765) au lieu du port réel.
+    # On ne lance docs.ensure() que si la base effective n'est pas déjà fixée
+    # (ex. : tests qui montent leur propre serveur docs sur port éphémère).
+    if docs.effective_base_url() == config.docs_base_url():
+        docs.ensure()
     system_text = config.build_system(model, cwd=cwd)
     return {
         "id": session_id,

@@ -63,16 +63,20 @@ def _write_tree(base: Path, files: dict[str, str]) -> None:
 
 
 class DocslinksMappingTest(unittest.TestCase):
+    """Tests de ``section_url_for()`` : retourne un lien de page (sans ancre).
+
+    Le modèle ne connaît pas les ancres HTML ; le fallback ne les résout pas.
+    """
     def setUp(self) -> None:
         _load_fixture()
 
-    def test_line_dans_section_donne_ancre(self) -> None:
+    def test_fichier_connu_donne_lien_page(self) -> None:
         self.assertEqual(
             dl.section_url_for("01_asynchronous.qmd", 120, BASE),
-            f"{BASE}/Courses/01_asynchronous.html#exercises",
+            f"{BASE}/Courses/01_asynchronous.html",
         )
 
-    def test_ligne_en_debut_de_fichier_donne_page_sans_ancre(self) -> None:
+    def test_ligne_en_debut_donne_page_sans_ancre(self) -> None:
         self.assertEqual(
             dl.section_url_for("01_asynchronous.qmd", 5, BASE),
             f"{BASE}/Courses/01_asynchronous.html",
@@ -81,17 +85,14 @@ class DocslinksMappingTest(unittest.TestCase):
     def test_chemin_prefixe_course(self) -> None:
         self.assertEqual(
             dl.section_url_for("Courses/01_asynchronous.qmd", 120, BASE),
-            f"{BASE}/Courses/01_asynchronous.html#exercises",
+            f"{BASE}/Courses/01_asynchronous.html",
         )
 
     def test_doublon_suffixe_1(self) -> None:
+        # pas d'ancre (fallback page-only)
         self.assertEqual(
             dl.section_url_for("prerequisites.qmd", 145, BASE),
-            f"{BASE}/prerequisites.html#set-up-the-key-in-zed-1",
-        )
-        self.assertEqual(
-            dl.section_url_for("prerequisites.qmd", 90, BASE),
-            f"{BASE}/prerequisites.html#set-up-the-key-in-zed",
+            f"{BASE}/prerequisites.html",
         )
 
     def test_fichier_inconnu_retourne_none(self) -> None:
@@ -102,6 +103,12 @@ class DocslinksMappingTest(unittest.TestCase):
 
 
 class DocslinksRewriteTest(unittest.TestCase):
+    """Fallback de réécriture : ``fichier:ligne`` → lien de page (sans ancre).
+
+    Le modèle produit des liens natifs ; ce module est le filet de sécurité
+    sur les résultats d'outils. Pas de résolution d'ancre (le modèle ne la
+    connaît pas).
+    """
     def setUp(self) -> None:
         _load_fixture()
 
@@ -110,18 +117,18 @@ class DocslinksRewriteTest(unittest.TestCase):
             "Regarde 01_asynchronous.qmd:120, c'est dans les exercices.", BASE
         )
         self.assertIn(
-            f"[01_asynchronous.qmd:120]({BASE}/Courses/01_asynchronous.html#exercises)",
+            f"[01_asynchronous.qmd:120]({BASE}/Courses/01_asynchronous.html)",
             got,
         )
+        # pas d'ancre (fallback page-only)
+        self.assertNotIn("#", got.split("01_asynchronous.html")[1])
 
     def test_fichier_inconnu_reste_en_clair(self) -> None:
         got = dl.rewrite_content("cf. bidon.qmd:42.", BASE)
         self.assertEqual(got, "cf. bidon.qmd:42.")
 
     def test_fichier_seul_donne_lien_page(self) -> None:
-        # label nu (ex. cellule de tableau) → lien de la page, sans ancre ;
-        # les backticks qui encadrent la mention sont retirés (sinon le lien se
-        # rendrait en span de code, non cliquable)
+        # label nu → lien de page, sans ancre ; les backticks retirés
         got = dl.rewrite_content(
             "| 3 | `01_asynchronous.qmd` | - Write a program… |", BASE
         )
@@ -143,14 +150,12 @@ class DocslinksRewriteTest(unittest.TestCase):
         self.assertEqual(got, "Regarde bidon.qmd dans tes notes.")
 
     def test_fichier_seul_non_touche_si_suivi_d_un_numero(self) -> None:
-        # `nom.qmd:NN` reste géré par la citation ancrée, pas le lien de page
         got = dl.rewrite_content("cf. 01_asynchronous.qmd:28.", BASE)
         self.assertIn(
             f"[01_asynchronous.qmd:28]"
-            f"({BASE}/Courses/01_asynchronous.html#exercises)",
+            f"({BASE}/Courses/01_asynchronous.html)",
             got,
         )
-        # pas de lien de page (sans ancre) en plus : la paire nom:ligne suffit
         self.assertNotIn("01_asynchronous.html)`", got)
 
     def test_rewrite_inaltere_le_reste(self) -> None:
@@ -158,12 +163,11 @@ class DocslinksRewriteTest(unittest.TestCase):
         self.assertEqual(got, "Texte sans citation ici. Et puis voilà.")
 
     def test_citation_backtick_enleve(self) -> None:
-        # `nom.qmd:NN` dans des backticks → lien cliquable, sans backticks
         got = dl.rewrite_content("Voir `01_asynchronous.qmd:120` ici.", BASE)
         self.assertEqual(
             got,
             f"Voir [01_asynchronous.qmd:120]"
-            f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
+            f"({BASE}/Courses/01_asynchronous.html) ici.",
         )
 
     def test_fichier_seul_backtick_enleve(self) -> None:
@@ -175,20 +179,17 @@ class DocslinksRewriteTest(unittest.TestCase):
         )
 
     def test_chemin_prefixe_citation(self) -> None:
-        # `dossier/nom.qmd:ligne` → lien cliquable dont le libellé garde le
-        # chemin (un préfixe laissé hors du lien casserait la cliquabilité)
         got = dl.rewrite_content(
             "Voir Applications/03_0_Asynchronous.qmd:63 ici.", BASE
         )
         self.assertIn(
             f"[Applications/03_0_Asynchronous.qmd:63]"
-            f"({BASE}/Courses/Applications/03_0_Asynchronous.html#exemples)",
+            f"({BASE}/Courses/Applications/03_0_Asynchronous.html)",
             got,
         )
         self.assertNotIn("Applications/[03_0_Asynchronous", got)
 
     def test_chemin_prefixe_backtick_enleve(self) -> None:
-        # backticks autour du chemin complet → retirés, préfixe dans le lien
         got = dl.rewrite_content(
             "cf. `Applications/03_0_Asynchronous.qmd` quand tu veux.", BASE
         )
@@ -207,165 +208,51 @@ class DocslinksRewriteTest(unittest.TestCase):
         self.assertNotIn("`[python:asyncio]", got)
 
     def test_span_code_ordinaire_conserve(self) -> None:
-        # un span de code qui ne commence pas par un nom de fichier connu, ou
-        # un nom de fichier noyé dans un identifiant, reste intact (pas de
-        # retrait de backticks involontaire)
         text = "| `print(x)` | `x01_asynchronous.qmd.y` |"
         self.assertEqual(dl.rewrite_content(text, BASE), text)
+class DocslinksRewriteNoStreamingTest(unittest.TestCase):
+    """Tests de réécriture sur texte complet (plus de streaming depuis la
+    refonte : le modèle produit des liens natifs, pas de réécriture engine).
 
-
-class DocslinksStreamingTest(unittest.TestCase):
-    """La réécriture ne doit ni perdre ni dupliquer de texte, et recomposer une
-    citation coupée entre deux chunks du flux."""
-
+    Ces tests couvrent le fallback ``rewrite_content()`` sur les résultats
+    d'outils : conversion ``fichier:ligne`` → lien de page, ``python:<ref>``
+    → lien doc Python.
+    """
     def setUp(self) -> None:
         _load_fixture()
 
-    def _roundtrip(self, text: str, sizes: list[int]) -> str:
-        rw = dl.LinkRewriter(BASE)
-        parts: list[str] = []
-        pos = 0
-        for n in sizes:
-            rw.feed(text[pos:pos + n])
-            pos += n
-        parts += rw.finish()
-        return "".join(parts)
-
-    def test_citation_coupee_recomposee(self) -> None:
-        text = "00: cf. 01_asynchronous.qmd:120 fin"
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        # découpe au milieu du nom de fichier, puis au milieu des "120"
-        for c in ["00: cf. 01_asynchron", "ous.qmd:1", "20 fin"]:
-            out += rw.feed(c)
-        out += rw.finish()
-        self.assertEqual(
-            "".join(out),
-            "00: cf. [01_asynchronous.qmd:120]"
-            f"({BASE}/Courses/01_asynchronous.html#exercises) fin",
-        )
-
-    def test_aucune_perte_sur_texte_mixte(self) -> None:
-        text = "Le bloc 01_asynchronous.qmd:28 parle des exercices, et 00 rien."
-        rw = dl.LinkRewriter(BASE)
-        chunks = ["Le bloc 01_asynchronous.", "qmd:28", " parle des exercices, et 00 rien."]
-        out: list[str] = []
-        for c in chunks:
-            out += rw.feed(c)
-        out += rw.finish()
-        joined = "".join(out)
-        # le texte est conservé (citations remplacées par leurs liens)
-        self.assertIn("parle des exercices, et 00 rien.", joined)
-        self.assertIn(f"]({BASE}/Courses/01_asynchronous.html#exercises)", joined)
-
-    def test_jointure_egale_sur_chunks_aleatoires(self) -> None:
-        text = "Citation 01_asynchronous.qmd:15 et prerequisites.qmd:140 locales."
-        for chunk_max in (1, 3, 7, 25):
-            rw = dl.LinkRewriter(BASE)
-            out: list[str] = []
-            for i in range(0, len(text), chunk_max):
-                out += rw.feed(text[i:i + chunk_max])
-            out += rw.finish()
-            joined = "".join(out)
-            self.assertIn(f"[01_asynchronous.qmd:15]({BASE}/Courses/01_asynchronous.html#key-points)", joined)
-            self.assertIn(f"[prerequisites.qmd:140]({BASE}/prerequisites.html#set-up-the-key-in-zed-1)", joined)
-            # pas de texte perdu : les liens remplacent leurs mentions exactes
-            self.assertIn("et", joined)
-
-    def test_fichier_seul_coupe_recompose(self) -> None:
-        # label nu coupé au milieu du nom → recomposé puis lié (page entière)
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["Regarde 01_asynchron", "ous.qmd dans", " tes notes."]:
-            out += rw.feed(c)
-        out += rw.finish()
-        self.assertEqual(
-            "".join(out),
-            f"Regarde [01_asynchronous.qmd]"
-            f"({BASE}/Courses/01_asynchronous.html) dans tes notes.",
-        )
-
-    def test_fichier_seul_label_de_tableau(self) -> None:
-        # la synthèse « Fichier / Ligne » séparés qui cassait la cliquabilité ;
-        # backticks retirés : le lien est cliquable
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["| 3 | `01_asynchron", "ous.qmd` | - Write a program… |"]:
-            out += rw.feed(c)
-        out += rw.finish()
-        joined = "".join(out)
+    def test_rewrite_complete_text(self) -> None:
+        """La réécriture sur texte complet fonctionne (utilisé sur les résultats
+        d'outils dans engine.py)."""
+        text = "Regarde 01_asynchronous.qmd:120 et python:asyncio."
+        got = dl.rewrite_content(text, BASE)
         self.assertIn(
-            f"[01_asynchronous.qmd]({BASE}/Courses/01_asynchronous.html)",
-            joined,
+            f"[01_asynchronous.qmd:120]({BASE}/Courses/01_asynchronous.html)",
+            got,
         )
-        self.assertNotIn("`[01_asynchronous.qmd]", joined)
-
-    def test_citation_backtick_coupee_recomposee(self) -> None:
-        # citation dans des backticks coupée au milieu par le flux → recomposée,
-        # liée, et les backticks retirés
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["Voir `01_asynchron", "ous.qmd:1", "20` ici."]:
-            out += rw.feed(c)
-        out += rw.finish()
-        self.assertEqual(
-            "".join(out),
-            f"Voir [01_asynchronous.qmd:120]"
-            f"({BASE}/Courses/01_asynchronous.html#exercises) ici.",
-        )
-
-    def test_citation_backtick_fermee_en_fin_de_flux(self) -> None:
-        # RÉGRESSION « les liens ne sont pas là » : une citation backtickée peut
-        # se trouver à la TOUTE fin du flux, fermeture de backticks comprise dans
-        # le dernier morceau. Le buffer doit l'avaler ENTIÈRE — sinon ``python:``
-        # partait en clair dans le morceau sûr et ``asyncio` `` restait en attente
-        # (jamais ré-écrit ensuite) : symptôme exact du transcript réel.
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["Doc Python : `python:asyncio`"]:
-            out += rw.feed(c)
-        out += rw.finish()
-        joined = "".join(out)
         self.assertIn(
             "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
-            joined,
+            got,
         )
-        # rien ne doit subsister en clair (ni backticks scindés, ni ``python:`` nu)
-        self.assertNotIn("`python:", joined)
-        self.assertNotIn("asyncio`", joined)
 
-    def test_citation_backtick_fermee_en_fin_flux_apres_autre_citation(self) -> None:
-        # variante : la citation backtickée fermée en fin de flux suit une autre
-        # citation déjà retenue dans le buffer — les deux doivent être liées
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["Voir `python:asyncio` puis ", "`01_asynchronous.qmd:120`"]:
-            out += rw.feed(c)
-        out += rw.finish()
-        joined = "".join(out)
+    def test_no_anchor_in_fallback(self) -> None:
+        """Le fallback ne résout pas d'ancre : lien de page uniquement."""
+        text = "01_asynchronous.qmd:120"
+        got = dl.rewrite_content(text, BASE)
+        self.assertIn("01_asynchronous.html)", got)
+        # pas d'ancre (le modèle ne la connaît pas)
+        self.assertNotIn("#exercises", got)
+
+    def test_python_ref_in_text(self) -> None:
+        text = "La doc de python:asyncio est utile."
+        got = dl.rewrite_content(text, BASE)
         self.assertIn(
             "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
-            joined,
+            got,
         )
-        self.assertIn(
-            f"[01_asynchronous.qmd:120]"
-            f"({BASE}/Courses/01_asynchronous.html#exercises)",
-            joined,
-        )
-
-    def test_chemin_prefixe_coupe_recompose(self) -> None:
-        # chemin de dossier coupé entre deux chunks (par le `Applications/` et au
-        # milieu du nom) → recomposé, lié avec le préfixe, backticks retirés
-        rw = dl.LinkRewriter(BASE)
-        out: list[str] = []
-        for c in ["cf. `Applications/", "03_0_Asynchro", "nous.qmd:63` ok"]:
-            out += rw.feed(c)
-        out += rw.finish()
-        self.assertEqual(
-            "".join(out),
-            f"cf. [Applications/03_0_Asynchronous.qmd:63]"
-            f"({BASE}/Courses/Applications/03_0_Asynchronous.html#exemples) ok",
-        )
+        self.assertNotIn("python:asyncio", got.replace(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)", ""
+        ))
 
 
 class RealSectionsJsonTest(unittest.TestCase):

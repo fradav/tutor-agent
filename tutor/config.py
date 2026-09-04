@@ -19,6 +19,8 @@ import json
 import os
 from pathlib import Path
 
+from . import docs as _docs_module
+
 BASE_DIR = Path(__file__).resolve().parent.parent            # Tutor-agent/
 CONFIG_PATH = BASE_DIR / "config.json"
 CONFIG_LOCAL_PATH = BASE_DIR / "config.local.json"
@@ -199,6 +201,16 @@ def docs_base_url() -> str:
     return str(docs().get("base_url", "http://127.0.0.1:8765")).rstrip("/")
 
 
+def book_base_url() -> str:
+    """URL de base du book public pour les liens du modèle.
+
+    Retourne la base effective du serveur docs (port de repli si besoin),
+    sans slash final. C'est la valeur injectée dans le prompt système
+    pour que le modèle produise des liens markdown natifs.
+    """
+    return _docs_module.effective_base_url().rstrip("/")
+
+
 def docs_port() -> int:
     return int(docs().get("port", 8765))
 
@@ -275,14 +287,32 @@ def build_system(model: str, cwd: str = "") -> str:
     `MIASHS-Configuration-Tutorat/prompts/`) et sont **déposés** dans le
     workspace projet comme ``AGENTS.md``/``AGENTS.<model>.md`` — aucun script,
     jamais embarqués dans le runner.
+
+    Un bloc **Références** est préfixé au texte (avant le contenu AGENTS) pour
+    donner au modèle la base URL du book et les conventions de liens. C'est
+    injecté ici (pas dans les fichiers de prompt) car la base URL change par
+    session (port dynamique).
     """
+    base_url = book_base_url()
+    refs = (
+        "## Références\n"
+        "- Base URL du book : **" + base_url + "**\n"
+        "- Cours : `[nom](BASE_URL/Courses/nom.html)`\n"
+        "- TP / applications : `[nom](BASE_URL/Courses/Applications/nom.html)`\n"
+        "- Doc Python : `[python:module](https://docs.python.org/3/library/module.html)`\n"
+        "- Écris les liens en markdown natif `[texte](url)` — ne réécris jamais "
+        "un lien existant dans `[...]([...]url...)](url)` ni utilise la syntaxe "
+        "wiki `[[...]]`.\n"
+        "- Si tu ne connais pas l'ancre HTML exacte, un lien vers la page est "
+        "suffisant.\n"
+    )
     if cwd:
         root = Path(cwd)
         for fname in (f"AGENTS.{model}.md", "AGENTS.md"):
             candidate = root / fname
             if candidate.is_file():
-                return candidate.read_text(encoding="utf-8").strip()
-    return ""
+                return refs + candidate.read_text(encoding="utf-8").strip()
+    return refs
 
 
 def is_brut(model: str) -> bool:

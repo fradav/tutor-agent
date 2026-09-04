@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any
 
 from . import config
-from .docslinks import LinkRewriter, rewrite_content
+from .docslinks import rewrite_content
 from .llm import stream_complete
 from .tools import (
     find_paths,
@@ -958,13 +958,13 @@ class TutorEngine:
         content_parts: list[str] = []
         raw_parts: list[str] = []
         tools_used: list[dict] = []
-        # Doc cliquable : les citations ``fichier:ligne`` du contenu visible sont
-        # réécrites en liens markdown vers le book servi par tutor.docs. Le
-        # rewriter garde en buffer un suffixe de citation coupé entre deux chunks
-        # (``…01_asynchrono`` ``us.qmd:120 …``) pour ne rien casser en plein
-        # complément. Ne touche PAS le raisonnement (canal séparé) ni les
-        # messages role:"tool" renvoyés au modèle (contexte brut intact).
-        rewriter = LinkRewriter()
+        # Le modèle produit des liens markdown natifs (`[texte](url)`) grâce à
+        # la section « Références » injectée dans le prompt système par
+        # ``config.build_system()``. On passe le contenu tel quel — pas de
+        # réécriture post-hoc (qui causait des liens imbriqués dans l'historique).
+        # Fallback optionnel : si le modèle produit encore ``fichier:ligne``, le
+        # ``rewrite_content()`` sur les résultats d'outils (ci-dessous) le
+        # convertit en lien de page.
         finish = ""
         usage: dict = {}
         for _round in range(MAX_TOOL_ROUNDS):
@@ -982,10 +982,9 @@ class TutorEngine:
                             if text:
                                 yield (kind, text)
                         else:
-                            for out in rewriter.feed(text):
-                                content_parts.append(out)
-                                if out:
-                                    yield (kind, out)
+                            content_parts.append(text)
+                            if text:
+                                yield (kind, text)
                 if fr:
                     finish = fr
                 if us:
@@ -998,16 +997,9 @@ class TutorEngine:
                     if text:
                         yield (kind, text)
                 else:
-                    for out in rewriter.feed(text):
-                        content_parts.append(out)
-                        if out:
-                            yield (kind, out)
-            # fin du round : vide le buffer de citation en attente (un tour peut
-            # se terminer au milieu d'une mention ; le lien ne se complètera pas).
-            for out in rewriter.finish():
-                content_parts.append(out)
-                if out:
-                    yield ("content", out)
+                    content_parts.append(text)
+                    if text:
+                        yield (kind, text)
             if not round_tool_calls:
                 break
             # Le modèle veut lire le corpus : on exécute réellement l'outil et on

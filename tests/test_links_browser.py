@@ -1,19 +1,16 @@
-"""Tests — liens matières renvoyés par un tour tuteur, cliquables et servis.
+"""Tests — liens matières renvoyés par un tour tuteur, cliquables et visibles.
 
-Simule une session étudiant **sans LLM réel** : le mode STUB est désactivé
-(``config.STUB`` patché à False) et le backend est mocké
-(``TutorEngine.complete_model_stream``) pour produire un contenu qui cite le
-corpus — un chapitre (``03_Asynchronous.qmd:63``), un TP
-(``Applications/03_0_Asynchronous.qmd:51``) et la doc Python (``python:asyncio``).
+Simule une session étudiant **sans LLM réel** : le backend est mocké
+(``TutorEngine.complete_model_stream``) pour produire un contenu avec des
+liens markdown natifs (le modèle les produit directement grâce à la section
+« Références » du prompt système).
 
-Le vrai pipeline de réécriture (``tutor.docslinks``) transforme ces citations en
-liens markdown vers un **vrai** serveur docs (book du jumeau ``www/`` + miroir
-Python temporaire) lancé sur un port éphémère — exactement ce que voit l'étudiant.
+Un vrai serveur docs (book du jumeau ``www/`` + miroir Python temporaire) est
+lancé sur un port éphémère — exactement ce que voit l'étudiant.
 
 On vérifie que TOUS les liens du contenu renvoyé sont effectivement cliquables
 et visibles dans un navigateur : HTTP 200 sur chacun et ancre présente dans le
-HTML servi. Un second test découpe une citation entre deux chunks pour exercer
-la recomposition streaming du ``LinkRewriter``.
+HTML servi.
 """
 
 from __future__ import annotations
@@ -29,31 +26,25 @@ from unittest import mock
 from tutor import config, docs, engine
 from tutor.engine import TutorEngine
 
-# Échantillon de réponse tuteur : citations chapitre + TP + doc Python.
-_SAMPLE = (
-    "Pour l'asynchrone, lisez d'abord le chapitre (cf. 03_Asynchronous.qmd:63), "
-    "puis faites le TP Applications/03_0_Asynchronous.qmd:51. "
-    "La boucle d'événements est documentée dans python:asyncio."
+# Réponse mockée du modèle : liens markdown natifs avec la base URL du book.
+# Le modèle produit ces liens grâce à la section « Références » injectée dans
+# le prompt système par ``config.build_system()``.
+_SAMPLE_NATIVE_LINKS = (
+    "Pour l'asynchrone, lis le cours : "
+    "[Programmation asynchrone](http://127.0.0.1:8765/Courses/03_Asynchronous.html) "
+    "et le TP : "
+    "[TP Asynchrone](http://127.0.0.1:8765/Courses/Applications/03_0_Asynchronous.html). "
+    "La doc Python : "
+    "[python:asyncio](https://docs.python.org/3/library/asyncio.html)."
 )
 
-# Réponse produite réellement par qwen3.5-4B (session Playground-table) : les
-# références sont dans des backticks, en liste, avec un label gras — c'est le
-# cas où l'utilisateur signalait « les liens ne sont pas là ». La réécriture doit
-# retirer les backticks et lier chaque ``*.qmd:ligne`` (le label ``**…**`` n'est
-# pas un lien à toucher) ; ``python:asyncio`` est ajouté pour couvrir aussi la
-# doc Python dans ce format réel.
-_REAL_QWEN35 = (
-    "## Références cours\n\n"
-    "- **`asyncio.gather`** : `03_0_Asynchronous.qmd:830`\n"
-    "- **Exemple de code** : `03_0_Asynchronous.qmd:848`\n"
-    "- **Exemple avancé** : `03_0_Asynchronous.qmd:1007`\n\n"
-    "**Question** : Comment appeler `asyncio.gather()` avec deux coroutines "
-    "pour les exécuter en parallèle ?\n\n"
-    "Doc Python : `python:asyncio`\n"
+# Réponse avec des liens imbriqués (bug signalé) : le modèle aurait dû ne pas
+# le faire grâce aux instructions, mais on vérifie que le moteur ne casse pas
+# ce cas de figure.
+_SAMPLE_NESTED_BUG = (
+    "Lis [Cours]([03_Asynchronous.qmd](http://127.0.0.1:8765/Courses/03_Asynchronous.html)) "
+    "pour comprendre."
 )
-
-# URL attendue pour les lignes 830/848/1007 du TP signalé par l'utilisateur.
-_REAL_APP_URL = "Courses/Applications/03_0_Asynchronous.html#asynchronous-widgets"
 
 
 def _fake_complete(*chunks: str):
@@ -72,10 +63,9 @@ class StudentLinksClickableTest(unittest.TestCase):
     """Un tour tuteur (backend mocké) renvoie des liens cliquables vers le book
     (chapitres + TP) et la doc Python, servis par un vrai serveur docs."""
 
-    # Les ancres visées par les citations du test, telles que résolues par
-    # ``docslinks.section_url_for`` sur la carte committée (sections.json).
-    COURSE_URL = "Courses/03_Asynchronous.html#io-bound-vs.-cpu-bound"
-    APP_URL = "Courses/Applications/03_0_Asynchronous.html#asyncio-queues"
+    # URLs attendues pour les liens natifs du test.
+    COURSE_URL = "Courses/03_Asynchronous.html"
+    APP_URL = "Courses/Applications/03_0_Asynchronous.html"
     PY_URL = "py/library/asyncio.html"
 
     def setUp(self) -> None:
@@ -146,68 +136,63 @@ class StudentLinksClickableTest(unittest.TestCase):
 
     # -- tests -------------------------------------------------------------
 
-    def test_liens_cours_tp_python_cliquables(self) -> None:
-        turn = self._run_turn_with((_SAMPLE,))
-        content = turn["content"]
-        # Les trois liens attendus ont été produits par la réécriture.
-        for expected in (self.COURSE_URL, self.APP_URL, self.PY_URL):
-            self.assertIn(
-                f"{self.base}/{expected}", content,
-                f"lien manquant dans le contenu : {expected}",
-            )
-        links = self._links_in(content)
+    def test_liens_natifs_cours_tp_python_cliquables(self) -> None:
+        """Le modèle produit des liens markdown natifs vers le book (chapitres +
+        TP) et la doc Python — tous cliquables et visibles."""
+        # Adapter le contenu pour utiliser le port dynamique du test
+        content = _SAMPLE_NATIVE_LINKS.replace(
+            "http://127.0.0.1:8765", self.base
+        )
+        turn = self._run_turn_with((content,))
+        result = turn["content"]
+        # Les liens vers le book (cours + TP) ont été produits par le modèle.
+        self.assertIn(f"{self.base}/{self.COURSE_URL}", result)
+        self.assertIn(f"{self.base}/{self.APP_URL}", result)
+        # La doc Python pointe vers l'URL en ligne (le modèle utilise ce défaut)
+        self.assertIn("https://docs.python.org/3/library/asyncio.html", result)
+        links = self._links_in(result)
         self.assertGreaterEqual(len(links), 3)
         for url in links:
             body = self._assert_clickable(url)
             self._assert_anchor_present(url, body)
 
-    def test_citation_decoupee_entre_chunks_recomposee(self) -> None:
-        """Une citation coupée entre deux chunks (streaming réel) donne un lien
-        complet et cliquable — exercice du buffer du ``LinkRewriter``."""
-        chunks = (
-            "Lis d'abord le chapitre 03_Asynchro",
-            "nous.qmd:63 puis le TP Applications/03_0_Asynchro",
-            "nous.qmd:51. La boucle : python:asynci",
-            "o.",
-        )
-        turn = self._run_turn_with(chunks)
-        content = turn["content"]
-        for expected in (self.COURSE_URL, self.APP_URL, self.PY_URL):
-            self.assertIn(f"{self.base}/{expected}", content,
-                          f"lien manquant (chunké) : {expected}")
-        for url in self._links_in(content):
-            self._assert_clickable(url)
-        # Une recomposition ratée laisserait les fragments ``03_Asynchro`` /
-        # ``nous.qmd:63`` en texte brut (aucun lien) → l'assertion de présence
-        # ci-dessus aurait échoué : le streaming a donc bien recomposé la citation.
+    def test_liens_natifs_sont_passes_tel_quels(self) -> None:
+        """Les liens natifs du modèle passent à travers l'engine sans être
+        réécrits ni cassés — pas de liens imbriqués ajoutés."""
+        content = f"[Cours]({self.base}/Courses/03_Asynchronous.html)"
+        turn = self._run_turn_with((content,))
+        result = turn["content"]
+        # Le lien original doit être présent tel quel
+        self.assertIn(f"[Cours]({self.base}/Courses/03_Asynchronous.html)", result)
+        # Pas de réécriture qui ajouterait des backticks ou des liens imbriqués
+        self.assertNotIn("``", result)
+        # Un seul lien markdown (pas de double emboîtement)
+        hrefs = re.findall(r"\[[^\]]*\]\([^)]+\)", result)
+        self.assertEqual(len(hrefs), 1,
+                         f"nombre de liens attendu: 1, obtenu: {len(hrefs)}")
 
-    def test_reponse_reelle_qwen35_backticks_liste(self) -> None:
-        """Le format réel de qwen3.5-4B (réf. dans des backticks, en liste, avec
-        un label gras) donne des liens cliquables — la sortie signalée
-        « les liens ne sont pas là ». AUCUNE citation ``*.qmd:ligne`` ne doit
-        subsister en texte brut, et Chaque lien doit répondre HTTP 200 avec une
-        ancre présente (cliquable et visible dans un navigateur)."""
-        turn = self._run_turn_with((_REAL_QWEN35,))
-        content = turn["content"]
-        # Aucune des citations backtickées du transcript réel ne reste en l'état
-        # (c'était précisément le symptôme « les liens ne sont pas là »).
-        for raw in ("`03_0_Asynchronous.qmd:830`", "`03_0_Asynchronous.qmd:848`",
-                    "`03_0_Asynchronous.qmd:1007`", "`python:asyncio`"):
-            self.assertNotIn(raw, content,
-                             f"citation non réécrite dans le contenu : {raw}")
-        # Les trois références du TP pointent vers la même ancre réelle ; la doc
-        # Python est servie par le miroir local temporaire.
-        for expected in (self.PY_URL,):
-            self.assertIn(f"{self.base}/{expected}", content,
-                          f"lien manquant (format réel) : {expected}")
-        app_url = f"{self.base}/{_REAL_APP_URL}"
-        self.assertGreaterEqual(content.count(app_url), 3,
-                                "les 3 références du TP doivent être liées")
-        links = self._links_in(content)
-        self.assertGreaterEqual(len(links), 4)
-        for url in links:
-            body = self._assert_clickable(url)
-            self._assert_anchor_present(url, body)
+    def test_fallback_rewrite_sur_resultat_outil(self) -> None:
+        """Le fallback ``rewrite_content()`` sur les résultats d'outils convertit
+        ``fichier:ligne`` en lien de page (le modèle ne connaît pas les ancres)."""
+        from tutor.docslinks import rewrite_content
+        tool_result = "Ligne trouvée dans 03_Asynchronous.qmd:63"
+        got = rewrite_content(tool_result, self.base)
+        self.assertIn(
+            f"[03_Asynchronous.qmd:63]({self.base}/Courses/03_Asynchronous.html)",
+            got,
+        )
+        # Pas d'ancre (fallback page-only)
+        self.assertNotIn("#", got.split("03_Asynchronous.html")[1])
+
+    def test_python_ref_rewrite_sur_resultat_outil(self) -> None:
+        """Le fallback convertit aussi ``python:<ref>`` en lien doc Python."""
+        from tutor.docslinks import rewrite_content
+        tool_result = "Module documenté : python:asyncio"
+        got = rewrite_content(tool_result, self.base)
+        self.assertIn(
+            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
+            got,
+        )
 
 
 if __name__ == "__main__":

@@ -34,14 +34,21 @@ def _write_tree(base: Path, files: dict[str, str]) -> None:
 
 
 class BuildSystemAgentsTest(unittest.TestCase):
-    """AGENTS.<model>.md takes precedence over AGENTS.md; none → empty."""
+    """AGENTS.<model>.md takes precedence over AGENTS.md; none → Références only.
 
+    ``build_system()`` préfixe toujours un bloc « Références » (base URL du book,
+    instructions liens natifs) au contenu AGENTS. En mode STUB, la base URL est
+    ``http://127.0.0.1:8765``.
+    """
     MD = "# AGENTS\n\nTeach me socratically."
+    _REFS_PREFIX = "## Références\n- Base URL du book : **http://127.0.0.1:8765**"
 
     def test_agents_md_alone(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             _write_tree(Path(tmp), {"AGENTS.md": self.MD})
-            self.assertEqual(config.build_system("qwen3.5-4B", tmp), self.MD.strip())
+            got = config.build_system("qwen3.5-4B", tmp)
+            self.assertIn(self.MD.strip(), got)
+            self.assertIn(self._REFS_PREFIX, got)
 
     def test_model_variant_wins_over_plain(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -49,7 +56,10 @@ class BuildSystemAgentsTest(unittest.TestCase):
                 "AGENTS.md": "plain",
                 "AGENTS.qwen3.5-4B.md": "variant",
             })
-            self.assertEqual(config.build_system("qwen3.5-4B", tmp), "variant")
+            got = config.build_system("qwen3.5-4B", tmp)
+            self.assertIn("variant", got)
+            self.assertNotIn("plain", got)
+            self.assertIn(self._REFS_PREFIX, got)
 
     def test_other_model_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -57,14 +67,20 @@ class BuildSystemAgentsTest(unittest.TestCase):
                 "AGENTS.md": "plain",
                 "AGENTS.ornith-1.5-9B.md": "variant",
             })
-            self.assertEqual(config.build_system("qwen3.5-4B", tmp), "plain")
+            got = config.build_system("qwen3.5-4B", tmp)
+            self.assertIn("plain", got)
+            self.assertNotIn("variant", got)
+            self.assertIn(self._REFS_PREFIX, got)
 
-    def test_none_returns_empty(self) -> None:
+    def test_none_returns_refs_only(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            self.assertEqual(config.build_system("qwen3.5-4B", tmp), "")
+            got = config.build_system("qwen3.5-4B", tmp)
+            self.assertIn(self._REFS_PREFIX, got)
+            self.assertNotIn("AGENTS", got)
 
-    def test_empty_cwd_returns_empty(self) -> None:
-        self.assertEqual(config.build_system("qwen3.5-4B", ""), "")
+    def test_empty_cwd_returns_refs_only(self) -> None:
+        got = config.build_system("qwen3.5-4B", "")
+        self.assertIn(self._REFS_PREFIX, got)
 
     def test_initial_state_loads_agents_from_cwd(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -79,7 +95,9 @@ class BuildSystemAgentsTest(unittest.TestCase):
             messages = state["messages"]
             self.assertTrue(messages)
             self.assertEqual(messages[0]["role"], "system")
-            self.assertEqual(messages[0]["content"], "variant-socratic")
+            content = messages[0]["content"]
+            self.assertIn("variant-socratic", content)
+            self.assertIn(self._REFS_PREFIX, content)
 
 
 class ProjectToolPathsTest(unittest.TestCase):
@@ -356,23 +374,6 @@ class PythonCiteRewriteTest(unittest.TestCase):
             got,
         )
         self.assertNotIn("asyncio..html", got)
-
-    def test_streaming_cut_recomposed(self) -> None:
-        with mock.patch.object(
-            config, "python_doc_base_url",
-            return_value="https://docs.python.org/3/",
-        ):
-            rw = dl.LinkRewriter("http://127.0.0.1:8765")
-            out: list[str] = []
-            for c in ["Voir python:asynci", "o pour la boucle."]:
-                out += rw.feed(c)
-            out += rw.finish()
-        joined = "".join(out)
-        self.assertIn(
-            "[python:asyncio](https://docs.python.org/3/library/asyncio.html)",
-            joined,
-        )
-        self.assertIn("pour la boucle.", joined)
 
     def test_rest_unaltered(self) -> None:
         got = dl.rewrite_content("Aucune citation ici.", "http://127.0.0.1:8765")

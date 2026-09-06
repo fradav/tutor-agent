@@ -151,8 +151,8 @@ class AcpProtocolTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(opt.category, "model")
         self.assertEqual(opt.current_value, DEFAULT_MODEL)
         # Une entrée par profil de config.json (qwen3.5-4B, ornith-1.5-9B,
-        # gemma-4-E4B).
-        self.assertEqual(len(opt.options), 3)
+        # gemma-4-E4B, ling-3.0-tiny).
+        self.assertEqual(len(opt.options), 4)
         self.assertIn(DEFAULT_MODEL, {o.value for o in opt.options})
 
     async def test_load_session_replays_history(self) -> None:

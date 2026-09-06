@@ -295,8 +295,16 @@ Python doc (`docs.python_doc_url`) is used for `python:<ref>` citations.
 Beyond the local router, the harness can fall back to a **remote endpoint**
 (lab machine / other host), per profile or as a last resort:
 
+- **`.env-secret`** (repo root, gitignored, never committed) is the priority
+  source: `OPENAI_ENDPOINT=<url>` and `OPENAI_API_KEY=<key>` (one per line,
+  optional quotes). Keeps real credentials out of `config.json`. The endpoint
+  must be the OpenAI-compatible **base without a trailing `/v1`**: the client
+  appends `/v1/chat/completions` itself and probes `/health`, then `/v1/models`
+  — a trailing `/v1` yields double-`/v1` 404s.
 - `config.json → fallback`: `endpoint` (e.g. `http://<host>:8080`) and
-  `api_key` (Bearer). Empty `endpoint` (shipped default) → fallback disabled.
+  `api_key` (Bearer) are used only when `.env-secret` gives nothing — see
+  `tutor/config.py::fallback_endpoint()` / `fallback_api_key()`.
+  Empty `endpoint` (shipped default) → fallback disabled.
   `profiles.<model>.endpoint` overrides the fallback for that model.
 - See `tools/download_gguf.sh` and `tools/llama-swap-tuteur.example.yaml` for
   setting up the remote host.

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 from pathlib import Path
 
 from . import docs as _docs_module
@@ -85,23 +86,74 @@ def is_remote(model: str) -> bool:
     return bool((profile(model).get("endpoint") or "").strip())
 
 
+# Fichier de secrets du fallback distant (endpoint + clef API), à la racine
+# Tutor-agent/, jamais commité (.gitignore). Format `KEY=VALUE`, un par ligne.
+ENV_SECRET_PATH = BASE_DIR / ".env-secret"
+
+_ENV_SECRET_CACHE: dict[str, str] | None = None
+
+
+def _read_env_secret() -> dict[str, str]:
+    """Charge `.env-secret` (format `KEY=VALUE`, sans python-dotenv).
+
+    Seules les lignes `KEY=VALUE` comptent (commentaires `#…` et lignes vides
+    ignorés) ; les valeurs peuvent être entre guillemets simples ou doubles
+    (`shlex`). Fichier absent → dict vide.
+    """
+    out: dict[str, str] = {}
+    if not ENV_SECRET_PATH.is_file():
+        return out
+    for raw in ENV_SECRET_PATH.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        try:
+            tokens = shlex.split(line, posix=True)
+        except ValueError:
+            continue
+        for token in tokens:
+            key, sep, value = token.partition("=")
+            if sep and key.strip():
+                out[key.strip()] = value.strip()
+    return out
+
+
+def _env_secret() -> dict[str, str]:
+    """Valeurs du `.env-secret`, lues paresseusement au premier appel (jamais au
+    chargement du module) puis mises en cache pour la session."""
+    global _ENV_SECRET_CACHE
+    if _ENV_SECRET_CACHE is None:
+        _ENV_SECRET_CACHE = _read_env_secret()
+    return _ENV_SECRET_CACHE
+
+
 def fallback_endpoint() -> str | None:
     """Endpoint de secours quand le routeur localhost 8025 n'est pas joignable.
 
-    Où : `config.json` → `fallback.endpoint`, vide par défaut (fallback désactivé).
-    Peut être un hôte distant (<https://llm-serve.exemple.fr>) servi par
-    llama-swap/llama-server, distinct de `localhost:8025`.
+    Où, par ordre de précédence : `.env-secret` (`OPENAI_ENDPOINT`, à la racine
+    Tutor-agent/, jamais commité) puis `config.json` → `fallback.endpoint`. Vide
+    → fallback désactivé. Peut être un hôte distant
+    (<https://llm-serve.exemple.fr>) servi par llama-swap/llama-server, distinct
+    de `localhost:8025`.
     """
+    endpoint = (_env_secret().get("OPENAI_ENDPOINT") or "").strip()
+    if endpoint:
+        return endpoint
     return (_CONFIG.get("fallback", {}).get("endpoint") or "").strip() or None
 
 
 def fallback_api_key() -> str | None:
-    """Clef d'API pour le fallback distant (`fallback.api_key`), si l'endpoint
-    exige une authentification. `` → aucun header d'auth envoyé.
+    """Clef d'API pour le fallback distant, si l'endpoint exige une
+    authentification. Où, par ordre de précédence : `.env-secret`
+    (`OPENAI_API_KEY`) puis `config.json` → `fallback.api_key`. None → aucun
+    header d'auth envoyé.
 
     La clef circule uniquement (1) dans le header `Authorization: Bearer …` vers
     le fallback, (2) dans un éventuel ping de disponibilité de `server.py::ensure`.
     """
+    key = (_env_secret().get("OPENAI_API_KEY") or "").strip()
+    if key:
+        return key
     return (_CONFIG.get("fallback", {}).get("api_key") or "").strip() or None
 
 

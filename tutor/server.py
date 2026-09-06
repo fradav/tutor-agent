@@ -176,26 +176,34 @@ def current_model() -> str | None:
 
 def health_ok(base_url: str | None = None, timeout: float = 2.0,
               api_key: str | None = None) -> bool:
-    """Le health check de llama.cpp répond 200 (modèle chargé et prêt).
+    """Le backend répond 200 sur son endpoint de disponibilité.
 
-    ``base_url`` par défaut = serveur local de config.json ; pour un profil
-    distant, passer ``config.model_base_url(model)``. Le routeur répond 503
-    pendant un chargement de modèle → ici ``False``.
+    Sonde ``/health`` (llama.cpp/llama-server local, ``base_url`` par défaut =
+    serveur local de config.json) puis ``/v1/models`` si le premier échoue —
+    certains endpoints distants (ex. fallback llama-swap protégé par
+    ``apiKeys:``) n'exposent pas ``/health`` mais répondent 200 sur
+    ``/v1/models``. Un 503 sur ``/health`` (chargement en cours) renvoie
+    immédiatement ``False``, sans sonder la suite. Pour un profil distant,
+    passer ``config.model_base_url(model)``.
 
     ``api_key`` : passé en header ``Authorization: Bearer`` si le serveur ciblé
-    (ex. fallback llama-swap protégé par ``apiKeys:``) l'exige pour ``/health``.
+    l'exige.
     """
     base = base_url or config.base_url()
-    req = urllib.request.Request(base + "/health")
-    if api_key:
-        req.add_header("Authorization", f"Bearer {api_key}")
-    try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return r.status == 200
-    except urllib.error.HTTPError:
-        return False  # 503 → en cours de chargement → pas prêt
-    except Exception:
-        return False
+    for path in ("/health", "/v1/models"):
+        req = urllib.request.Request(base + path)
+        if api_key:
+            req.add_header("Authorization", f"Bearer {api_key}")
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                if r.status == 200:
+                    return True
+        except urllib.error.HTTPError as err:
+            if err.code == 503:
+                return False  # serveur présent mais modèle en cours de chargement
+        except Exception:
+            continue
+    return False
 
 
 def _port_busy(timeout: float = 1.0) -> bool:

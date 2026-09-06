@@ -18,6 +18,9 @@ models/*.gguf.part
 
 # Config machine (chemins du cours côté enseignant) — posée par le jumeau
 config.local.json
+
+# Secrets locaux du fallback distant (endpoint + clef API) — à ne jamais committer
+.env-secret
 uv.lock
 TODO.md
 .e2e

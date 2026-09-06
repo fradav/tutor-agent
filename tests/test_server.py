@@ -13,7 +13,9 @@ sans jamais lancer de processus ni toucher au port :
 """
 from __future__ import annotations
 
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from tutor import config, server
@@ -176,6 +178,65 @@ class EnsureFallbackTest(unittest.TestCase):
         self.assertEqual(resp["mode"], "local")
         # reset au début, pas d'engagement.
         self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", False))
+
+
+class EnvSecretLoaderTest(unittest.TestCase):
+    """fallback_endpoint()/fallback_api_key() : le `.env-secret` prime sur
+    `config.json → fallback` (lecteur mocké, aucun fichier réel nécessaire)."""
+
+    SECRET = {
+        "OPENAI_ENDPOINT": "https://llm-serve.lab.fr/v1",
+        "OPENAI_API_KEY": "sk-env-secret",
+    }
+    CONFIG = {"endpoint": "http://192.168.1.20:8080", "api_key": "cfg-key"}
+
+    def _resolve(self, secret: dict | None, config_values: dict | None) -> tuple:
+        with (
+            mock.patch("tutor.config._env_secret", return_value=secret or {}),
+            mock.patch("tutor.config._CONFIG",
+                       {"fallback": config_values or {"endpoint": "", "api_key": ""}}),
+        ):
+            return config.fallback_endpoint(), config.fallback_api_key()
+
+    def test_env_secret_wins_over_config(self) -> None:
+        endpoint, key = self._resolve(self.SECRET, self.CONFIG)
+        self.assertEqual(endpoint, self.SECRET["OPENAI_ENDPOINT"])
+        self.assertEqual(key, self.SECRET["OPENAI_API_KEY"])
+
+    def test_config_used_without_env_secret(self) -> None:
+        endpoint, key = self._resolve(None, self.CONFIG)
+        self.assertEqual(endpoint, self.CONFIG["endpoint"])
+        self.assertEqual(key, self.CONFIG["api_key"])
+
+    def test_empty_when_neither_configured(self) -> None:
+        endpoint, key = self._resolve(None, {"endpoint": "", "api_key": ""})
+        self.assertIsNone(endpoint)
+        self.assertIsNone(key)
+
+    def test_partial_env_secret_falls_back_per_field(self) -> None:
+        # Seul l'endpoint est dans .env-secret → la clef retombe sur config.json.
+        endpoint, key = self._resolve(
+            {"OPENAI_ENDPOINT": "https://other.host/v1"}, self.CONFIG
+        )
+        self.assertEqual(endpoint, "https://other.host/v1")
+        self.assertEqual(key, self.CONFIG["api_key"])
+
+    def test_read_env_secret_real_parser(self) -> None:
+        """Le parser lit un vrai fichier : commentaires, ligne vide, guillemets."""
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / ".env-secret"
+            path.write_text(
+                "# commentaire\n"
+                "OPENAI_ENDPOINT=https://llm.lab/v1\n"
+                'OPENAI_API_KEY="sk-quoted"\n\n',
+                encoding="utf-8",
+            )
+            with mock.patch("tutor.config.ENV_SECRET_PATH", path):
+                self.assertEqual(
+                    config._read_env_secret(),
+                    {"OPENAI_ENDPOINT": "https://llm.lab/v1",
+                     "OPENAI_API_KEY": "sk-quoted"},
+                )
 
 
 if __name__ == "__main__":

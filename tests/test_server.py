@@ -100,6 +100,10 @@ class EnsureRefreshTest(unittest.TestCase):
                        return_value={"status": "ok", "pid": 4242, "logfile": "x",
                                      "detail": "routeur démarré"}) as start,
             mock.patch("tutor.server._mark_alias") as mark,
+            # Pas de remote : on force la voie locale même si un `.env-secret`
+            # réel est présent sur la machine de dev.
+            mock.patch("tutor.config.fallback_endpoint", return_value=None),
+            mock.patch("tutor.config.fallback_api_key", return_value=None),
         ):
             resp = server.ensure("ornith-1.5-9B", wait_up_to=5.0)
         return resp, stop, wait_free, start, mark
@@ -125,9 +129,11 @@ class EnsureRefreshTest(unittest.TestCase):
         self.assertIn("alias servi", resp["detail"])
 
     def test_ensure_restarts_on_any_current_alias_served(self) -> None:
-        """Dès qu'UN alias actuel est servi, pas de restart (aucun redémarrage au
-        switch alors qu'un autre modèle du preset est préchargé)."""
-        served = ["qwen3.5-4B"] + ["ornith", "q8"]  # un seul alias courant
+        """Tous les alias du preset actuel sont servis (même si le routeur en
+        sert aussi d'obsolètes en parallèle) → adoption, aucun restart : le
+        `>=` de _adopt_or_refresh exige la présence de TOUS les alias pour
+        ne pas tuer le serveur au switch de modèle."""
+        served = list(server._preset_aliases()) + ["legacy-q8", "old-gemma"]
         resp, stop, wait_free, start, _mark = self._run(served)
         stop.assert_not_called()
         start.assert_not_called()
@@ -135,23 +141,30 @@ class EnsureRefreshTest(unittest.TestCase):
 
 
 class EnsureFallbackTest(unittest.TestCase):
-    """ensure() : routeur local ABSENT → bascule sur le fallback distant si
-    configuré (`fallback.endpoint`) et joignable ; sinon démarrage local.
+    """ensure() : l'endpoint distant (.env-secret : endpoint + clef) est PRIORITAIRE.
 
     Cas couverts :
-      - fallback joignable → mode "fallback", `start` jamais appelé, flag engagé ;
-      - fallback injoignable → démarrage local (mode "local"), flag non engagé.
+      - remote configuré + joignable (local up OU down) → mode "fallback",
+        llama-server local tué (stop), `start` jamais appelé ;
+      - remote configuré mais injoignable → démarrage local (mode "local") ;
+      - aucun remote → démarrage local (mode "local").
     """
 
     FB = "http://192.168.1.50:8080"
 
-    def _run(self, fb_ok: bool):
+    def _run(self, fb_ok: bool, local_up: bool = False, remote_set: bool = True):
         with (
-            mock.patch("tutor.config.fallback_endpoint", return_value=self.FB),
+            mock.patch("tutor.config.fallback_endpoint",
+                       return_value=self.FB if remote_set else None),
+            mock.patch("tutor.config.fallback_api_key",
+                       return_value="sk-test" if remote_set else None),
             mock.patch("tutor.server.health_ok",
-                       side_effect=lambda base=None, timeout=2.0, api_key=None: bool(base) and fb_ok),
+                       side_effect=lambda base=None, timeout=2.0, api_key=None:
+                           (fb_ok if base == self.FB else local_up)),
             mock.patch("tutor.server.is_managed", return_value=False),
             mock.patch("tutor.server._port_busy", return_value=False),
+            mock.patch("tutor.server.stop") as stop,
+            mock.patch("tutor.server._wait_port_free") as wait_free,
             mock.patch("tutor.server.start",
                        return_value={"status": "ok", "pid": 1, "logfile": "x",
                                      "detail": "routeur démarré"}) as start,
@@ -159,24 +172,52 @@ class EnsureFallbackTest(unittest.TestCase):
             mock.patch("tutor.config.set_fallback_active") as set_fb,
         ):
             resp = server.ensure("ornith-1.5-9B", wait_up_to=5.0)
-        return resp, start, mark, set_fb
+        return resp, start, mark, set_fb, stop, wait_free
 
-    def test_fallback_engaged_when_local_absent_remote_ok(self) -> None:
-        resp, start, mark, set_fb = self._run(fb_ok=True)
+    def test_remote_priority_even_when_local_up(self) -> None:
+        """Endpoint + clef configurés et joignables → remote prioritaire : le
+        llama-server local est tué même s'il répond déjà (mode "fallback")."""
+        resp, start, mark, set_fb, stop, wait_free = self._run(
+            fb_ok=True, local_up=True)
+        stop.assert_called_once()
+        wait_free.assert_called_once()
         start.assert_not_called()
         mark.assert_called_once_with("ornith-1.5-9B")
         self.assertEqual(resp["mode"], "fallback")
         self.assertEqual(resp["status"], "ok")
-        self.assertIn("fallback distant", resp["detail"])
+        self.assertIn("arrêté", resp["detail"])
         self.assertIn(self.FB, resp["detail"])
-        # reset (False) en début d'ensure puis engagement (True) : dernier état actif.
+        # reset (False) en début d'ensure puis engagement (True) : dernier état.
         self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", True))
 
-    def test_ensure_starts_local_when_fallback_unreachable(self) -> None:
-        resp, start, _mark, set_fb = self._run(fb_ok=False)
+    def test_remote_priority_when_local_absent(self) -> None:
+        """Pas de serveur local mais remote joignable → toujours mode "fallback"."""
+        resp, start, mark, set_fb, stop, wait_free = self._run(
+            fb_ok=True, local_up=False)
+        stop.assert_called_once()  # kill idempotent même si rien ne tournait
+        wait_free.assert_called_once()
+        start.assert_not_called()
+        self.assertEqual(resp["mode"], "fallback")
+        self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", True))
+
+    def test_remote_unreachable_falls_back_to_local(self) -> None:
+        """Remote configuré (endpoint + clef) mais injoignable → démarrage local."""
+        resp, start, mark, set_fb, stop, wait_free = self._run(
+            fb_ok=False, local_up=False)
+        stop.assert_not_called()
+        wait_free.assert_not_called()
         start.assert_called_once_with(wait_up_to=5.0)
         self.assertEqual(resp["mode"], "local")
-        # reset au début, pas d'engagement.
+        self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", False))
+
+    def test_no_remote_starts_local(self) -> None:
+        """Pas de remote (ni `.env-secret`, ni `config.json → fallback`) → local."""
+        resp, start, _mark, set_fb, stop, wait_free = self._run(
+            fb_ok=False, local_up=False, remote_set=False)
+        stop.assert_not_called()
+        wait_free.assert_not_called()
+        start.assert_called_once_with(wait_up_to=5.0)
+        self.assertEqual(resp["mode"], "local")
         self.assertEqual(set_fb.call_args, mock.call("ornith-1.5-9B", False))
 
 

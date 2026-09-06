@@ -305,12 +305,13 @@ def ensure(model: str, wait_up_to: float = 180.0) -> dict:
         * serveur NON géré qui ne sert aucun alias du preset → erreur explicite ;
         * pas de serveur → démarre le routeur une fois et attend la disponibilité.
 
-    **Fallback distant** : si aucun serveur ne répond sur ``localhost`` ET que
-    ``config.fallback_endpoint()`` est défini et joignable (endpoint non local,
-    ex. llama-swap distant), le modèle y est basculé pour la session
-    (``config.set_fallback_active``) — aucun ```start`` local, mode ``fallback``.
-    Le fallback ne prend jamais le pas sur un routeur local : il n'est consulté
-    que quand le local est injoignable.
+    **Endpoint distant prioritaire** : si ``config.fallback_endpoint()`` ET
+    ``config.fallback_api_key()`` sont définis (`.env-secret` à la racine, ou
+    `config.json → fallback`) et que l'endpoint répond, le llama-server local est
+    tué (``stop``) et le modèle n'utilise QUE le remote pour la session
+    (``config.set_fallback_active``) — mode ``fallback``, aucun ```start`` local,
+    même si un serveur local répond déjà. Remote absent, incomplet (sans clef) ou
+    injoignable → repli sur la voie locale ci-dessous (démarrage automatique).
     Lève ``ServerError`` sur tout cas bloquant (log en cas d'échec).
     """
     config.set_fallback_active(model, False)
@@ -324,6 +325,28 @@ def ensure(model: str, wait_up_to: float = 180.0) -> dict:
         }
 
     with _ensure_lock:
+        # Endpoint distant PRIORITAIRE : quand `.env-secret` (ou `config.json`)
+        # fournit endpoint ET clef et que l'endpoint répond, on tue le
+        # llama-server local éventuel et on n'utilise QUE le remote — même si un
+        # serveur local répond déjà. Remote absent, incomplet (sans clef) ou
+        # injoignable → voie locale ci-dessous (démarrage automatique).
+        fallback_url = config.fallback_endpoint()
+        fallback_key = config.fallback_api_key()
+        if fallback_url and fallback_key and health_ok(
+            fallback_url,
+            timeout=3.0 if wait_up_to <= 15 else 8.0,
+            api_key=fallback_key,
+        ):
+            stop()
+            _wait_port_free()
+            config.set_fallback_active(model, True)
+            _mark_alias(model)
+            return {
+                "model": model, "alias": alias, "mode": "fallback",
+                "status": "ok",
+                "detail": "endpoint distant prioritaire (.env-secret) — llama-server "
+                           + "local arrêté, session sur " + fallback_url,
+            }
         if health_ok():
             if is_managed():
                 return _adopt_or_refresh(model, wait_up_to)
@@ -340,24 +363,6 @@ def ensure(model: str, wait_up_to: float = 180.0) -> dict:
                 f"un serveur NON géré répond sur {config.base_url()} mais ne sert "
                 f"aucun alias du preset ({_preset_aliases()}). "
                 "Arrêtez-le manuellement, puis relancez `start <model>`.")
-        # Fallback distant : pas de serveur local, mais un endpoint de secours
-        # (non local) est configuré et joignable -> on bascule le modèle dessus
-        # sans rien démarrer ici. En cas d'échec, on retombe sur le démarrage
-        # local ci-dessous (voie par défaut inchangée).
-        fallback_url = config.fallback_endpoint()
-        if fallback_url and health_ok(
-            fallback_url,
-            timeout=3.0 if wait_up_to <= 15 else 8.0,
-            api_key=config.fallback_api_key(),
-        ):
-            config.set_fallback_active(model, True)
-            _mark_alias(model)
-            return {
-                "model": model, "alias": alias, "mode": "fallback",
-                "status": "ok",
-                "detail": "routeur local injoignable — bascule sur le fallback distant "
-                           + fallback_url + " pour cette session",
-            }
         if is_managed():
             # Notre routeur tourne mais charge un modèle (503) : attendre, sans
             # redémarrer (PAS de kill au switch).

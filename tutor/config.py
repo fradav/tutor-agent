@@ -128,13 +128,13 @@ def _env_secret() -> dict[str, str]:
 
 
 def fallback_endpoint() -> str | None:
-    """Endpoint de secours quand le routeur localhost 8025 n'est pas joignable.
+    """Endpoint distant **prioritaire** quand un remote est configuré.
 
     Où, par ordre de précédence : `.env-secret` (`OPENAI_ENDPOINT`, à la racine
     Tutor-agent/, jamais commité) puis `config.json` → `fallback.endpoint`. Vide
-    → fallback désactivé. Peut être un hôte distant
-    (<https://llm-serve.exemple.fr>) servi par llama-swap/llama-server, distinct
-    de `localhost:8025`.
+    → aucun remote (démarrage local automatique du llama-server). Peut être un
+    hôte distant (<https://llm-serve.exemple.fr>) servi par llama-swap/llama-server,
+    distinct de `localhost:8025`.
     """
     endpoint = (_env_secret().get("OPENAI_ENDPOINT") or "").strip()
     if endpoint:
@@ -175,8 +175,9 @@ def model_base_url(model: str) -> str:
     """Base URL de l'API OpenAI-compatible pour `model`.
 
     Utilise dans l'ordre : l'endpoint du profil (`profiles.<m>.endpoint`), le
-    fallback distant (`fallback.endpoint`) si le modèle y est basculé par
-    `server.py::ensure` (routeur local injoignable), sinon le routeur local.
+    remote distant (`fallback.endpoint`) si le modèle y est basculé par
+    `server.py::ensure` (`.env-secret` endpoint + clef, mode ``fallback``), sinon
+    le routeur local.
     """
     prof = profile(model)
     endpoint = (prof.get("endpoint") or "").strip()

@@ -140,12 +140,18 @@ def _iter_glob(root: Path, pattern: str):
     (les répertoires sont du ressort de ``list_directory``).
     """
     if "**" in pattern:
+        # ``**`` doit aussi matcher zéro répertoire (fichiers à la racine) :
+        # ``Path('f.py').match('**/*.py')`` est False sous Python 3.14 pour un
+        # fichier à la racine — le workspace étudiant est justement plat. On
+        # essaie donc aussi le pattern privé de son ``**/`` de tête (qui, sans
+        # répertoire courant, matche le basename des deux cas).
+        headless = pattern[3:] if pattern.startswith("**/") else None
         for dirpath, dirnames, filenames in os.walk(root):
             dirnames[:] = [d for d in dirnames if d not in _NOISE_DIRS]
             base = Path(dirpath)
             for name in filenames:
                 rel = base.relative_to(root) / name
-                if rel.match(pattern):
+                if rel.match(pattern) or (headless and rel.match(headless)):
                     yield rel
     else:
         for cand in root.glob(pattern):

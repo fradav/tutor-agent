@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Télécharge les 3 modèles du tuteur dans ``models/`` (ou ``--dest``).
+"""Télécharge les 4 modèles du tuteur dans ``models/`` (ou ``--dest``).
 
 Décision §1.3 (TODO L70-78) : aucun .gguf n'est versionné dans le livrable ;
 ce script les récupère à l'installation (machine de l'élève). La copie physique
@@ -13,7 +13,7 @@ tool_instructions), déjà fourni localement dans ``models/``. Le
 pas être re-fetched à sa place.
 
 Usage :
-    python3 models/fetch_models.py                 # les 3 → models/
+    python3 models/fetch_models.py                 # les 4 → models/
     python3 models/fetch_models.py --dest /chemin  # autre destination
     python3 models/fetch_models.py --only Qwen3.5-4B-UD-Q8_K_XL.gguf
     python3 models/fetch_models.py --list          # résumé (noms + tailles)
@@ -50,6 +50,11 @@ MODELS: dict[str, tuple[str, int]] = {
         "https://huggingface.co/google/gemma-4-E4B-it-qat-q4_0-gguf/resolve/main/gemma-4-E4B_q4_0-it.gguf",
         5_154_941_280,
     ),
+    # ling-3.0-tiny : petit modèle série U (UD-Q4_K_XL) — voir démos appendix ACP
+    "Ling-3.0-tiny-UD-Q4_K_XL.gguf": (
+        "https://huggingface.co/bloomer010/Ling-3.0-tiny-GGUF/resolve/main/Ling-3.0-tiny-UD-Q4_K_XL.gguf",
+        5_340_611_552,
+    ),
 }
 
 
@@ -83,7 +88,7 @@ def main() -> int:
     )
     ap.add_argument("--dest", default=HERE, help="répertoire cible (défaut : models/)")
     ap.add_argument("--only", nargs="+", choices=sorted(MODELS),
-                    help="sous-ensemble de fichiers (défaut : les 3)")
+                    help="sous-ensemble de fichiers (défaut : les 4)")
     ap.add_argument("--list", action="store_true", help="résumé (noms + tailles) puis sortie")
     args = ap.parse_args()
 
@@ -114,7 +119,7 @@ def main() -> int:
     if not args.only:
         print("\nTous les .gguf sont en place.", file=sys.stderr)
     if targets:
-        print("(les .gguf pèsent ~5 Go chacun — prévoir ~17 Go libres)", file=sys.stderr)
+        print("(les .gguf pèsent ~5 Go chacun — prévoir ~22 Go libres)", file=sys.stderr)
     return 0
 
 

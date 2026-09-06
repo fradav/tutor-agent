@@ -257,14 +257,14 @@ def _wait_port_free(wait_up_to: float = 15.0) -> None:
 def _adopt_or_refresh(model: str, wait_up_to: float) -> dict:
     """Routeur géré déjà up : adopte si les alias du preset sont servis.
 
-    Si le routeur tourne mais ne sert **aucun** alias du preset actuel, c'est un
-    preset obsolète (config.json modifié après le démarrage — renommage d'alias,
-    changement de template). llama.cpp ne lit le preset INI qu'au démarrage → on
-    régénère le preset et on redémarre **une fois**. Cas normal (alias servis) :
-    adoption sans kill (PAS de redémarrage au switch de modèle).
+    Si tous les alias du preset actuel sont déjà servis, c'est le cas normal :
+    adoption sans kill (PAS de redémarrage au switch de modèle). Dès qu'il manque
+    au moins un alias (config.json modifié après le démarrage — ajout/renommage
+    d'alias, changement de template), le preset est obsolète : llama.cpp ne lit le
+    preset INI qu'au démarrage → on régénère le preset et on redémarre **une fois**.
     """
     alias = _alias(model)
-    if set(_server_aliases()) & set(_preset_aliases()):
+    if set(_server_aliases()) >= set(_preset_aliases()):
         _mark_alias(model)
         return {
             "model": model, "alias": alias, "mode": "local",

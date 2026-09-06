@@ -99,6 +99,21 @@
         "presence_penalty": 0.0,
         "repeat_penalty": 1.0
       }
+    },
+    "ling-3.0-tiny": {
+      "gguf": "Ling-3.0-tiny-UD-Q4_K_XL.gguf",
+      "alias": "ling-3.0-tiny",
+      "template": "embedded",
+      "endpoint": "",
+      "mode": "normal",
+      "sampling": {
+        "temperature": 1.0,
+        "top_p": 0.95,
+        "top_k": 20,
+        "min_p": 0.0,
+        "presence_penalty": 0.0,
+        "repeat_penalty": 1.0
+      }
     }
   }
 }

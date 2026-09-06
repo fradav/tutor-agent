@@ -58,8 +58,10 @@ def _deep_merge(base: dict, over: dict) -> dict:
 
 
 _CONFIG = _load(CONFIG_PATH)
+_CONFIG_LOCAL: dict | None = None
 if CONFIG_LOCAL_PATH.exists():
-    _CONFIG = _deep_merge(_CONFIG, _load(CONFIG_LOCAL_PATH))
+    _CONFIG_LOCAL = _load(CONFIG_LOCAL_PATH)
+    _CONFIG = _deep_merge(_CONFIG, _CONFIG_LOCAL)
 
 
 def load_config() -> dict:
@@ -253,10 +255,16 @@ def python_doc_base_url() -> str:
 
 
 def corpus_files() -> dict[str, str]:
-    """Carte clé -> nom de fichier .qmd du corpus (12 chapitres + 14 sujets de
-    TP de l'annexe B, sous ``Applications/``). Les TP ne sont pas rendus en HTML
-    par le book : leur page locale ancrée est générée par
-    ``tools/build_docs_map.py`` dans ``www/Courses/Applications``."""
+    """Carte clé -> nom de fichier .qmd du corpus.
+
+    Par défaut : 12 chapitres + 14 sujets de TP de l'annexe B, sous
+    ``Applications/`` (dépôt jumeau 2025). Un ``corpus_files`` défini dans
+    ``config.local.json`` **remplace** la carte entière (pas de fusion) : c'est
+    la façon de basculer la refonte 2026 du book public (clés ``00``…``06``).
+    Les TP ne sont pas rendus en HTML par le book : leur page locale ancrée est
+    générée par ``tools/build_docs_map.py`` dans ``www/Courses/Applications``."""
+    if _CONFIG_LOCAL and "corpus_files" in _CONFIG_LOCAL:
+        return dict(_CONFIG_LOCAL["corpus_files"])
     return dict(_CONFIG["corpus_files"])
 
 
